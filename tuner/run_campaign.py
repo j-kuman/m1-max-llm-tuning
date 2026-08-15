@@ -88,10 +88,38 @@ def ensure_dev_reference(
     ], env)
 
 
+def run_live_dev_control(
+    cfg: dict,
+    campaign_path: str,
+    db_path: Path,
+    reference_candidate: str,
+    prompt_file: str,
+    env: dict[str, str],
+    candidate_id: str,
+) -> str:
+    """Run the champion DEV suite immediately before one candidate's DEV suite."""
+    control_id = f"dev-control-{candidate_id}-{int(time.time())}"
+    print(f"\nEstablishing live DEV control for {candidate_id}...")
+    run([
+        sys.executable, "-m", "tuner.suite",
+        "--campaign", campaign_path,
+        "--draft", str(expand_path(cfg["champion"]["draft"])),
+        "--candidate-id", control_id,
+        "--stage", "dev",
+        "--prompt-file", prompt_file,
+        "--runs-per-prompt", "1",
+        "--db", str(db_path),
+        "--reference-candidate", reference_candidate,
+    ], env)
+    return control_id
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Budgeted campaign runner: neighbors -> build -> validate -> exact screen -> DEV gate -> optional production.")
     ap.add_argument("--campaign", required=True)
     ap.add_argument("--budget", type=int, default=8)
+    ap.add_argument("--offset", type=int, default=0,
+                    help="Start at this index in the deterministic local-neighbor list")
     ap.add_argument("--screen-runs", type=int, default=1)
     ap.add_argument("--control-runs", type=int, default=1,
                     help="Fresh champion runs used as the same-session screen performance baseline")
@@ -103,6 +131,11 @@ def main() -> None:
     ap.add_argument("--prompt-id", default="canonical-lru-python")
     ap.add_argument("--dev-prompt-file", default="tuner/prompts/dev.json")
     args = ap.parse_args()
+
+    if args.budget < 0 or args.offset < 0:
+        raise RuntimeError("--budget and --offset must be non-negative")
+    if args.screen_runs < 1 and args.budget > 0:
+        raise RuntimeError("--screen-runs must be >= 1 when --budget is nonzero")
 
     cfg = load_campaign(args.campaign)
     name = cfg["campaign"]["name"]
@@ -154,7 +187,8 @@ def main() -> None:
             "--reference-candidate", reference_candidate,
         ], env)
         fresh = load_screen_stats(
-            connect(db_path), name, control_candidate, args.prompt_id, "screen"
+            connect(db_path), name, control_candidate, args.prompt_id, "screen",
+            latest_n=args.control_runs,
         )
         if fresh is None:
             raise RuntimeError("fresh same-session champion control produced no valid rows")
@@ -195,8 +229,12 @@ def main() -> None:
             env,
         )
 
-    neighbors = generate_neighbors(cfg)[: args.budget]
-    print(f"Campaign {name}: evaluating {len(neighbors)} of {len(generate_neighbors(cfg))} local neighbors")
+    all_neighbors = generate_neighbors(cfg)
+    neighbors = all_neighbors[args.offset: args.offset + args.budget]
+    print(
+        f"Campaign {name}: evaluating {len(neighbors)} local neighbors "
+        f"from offset {args.offset} of {len(all_neighbors)}"
+    )
     print("reference candidate:", reference_candidate)
 
     advanced_screen: list[str] = []
@@ -225,24 +263,26 @@ def main() -> None:
             "--candidate", str(cand_file),
         ], env)
 
-        conn = connect(db_path)
-        existing = load_screen_stats(conn, name, cid, args.prompt_id, "screen")
-        if not existing or existing.count < args.screen_runs:
-            needed = args.screen_runs - (existing.count if existing else 0)
-            run([
-                sys.executable, "-m", "tuner.benchmark",
-                "--campaign", args.campaign,
-                "--draft", str(draft_dir),
-                "--candidate-id", cid,
-                "--stage", "screen",
-                "--runs", str(needed),
-                "--warmups", "1",
-                "--db", str(db_path),
-                "--prompt-id", args.prompt_id,
-                "--reference-candidate", reference_candidate,
-            ], env)
+        # Always take a fresh candidate screen when using a fresh live champion
+        # control. Historical candidate rows are preserved in SQLite but are not
+        # mixed into this session's performance comparison.
+        run([
+            sys.executable, "-m", "tuner.benchmark",
+            "--campaign", args.campaign,
+            "--draft", str(draft_dir),
+            "--candidate-id", cid,
+            "--stage", "screen",
+            "--runs", str(args.screen_runs),
+            "--warmups", "1",
+            "--db", str(db_path),
+            "--prompt-id", args.prompt_id,
+            "--reference-candidate", reference_candidate,
+        ], env)
 
-        stats = load_screen_stats(connect(db_path), name, cid, args.prompt_id, "screen")
+        stats = load_screen_stats(
+            connect(db_path), name, cid, args.prompt_id, "screen",
+            latest_n=args.screen_runs,
+        )
         assert stats is not None
         decision, reason = classify(
             screen_cfg,
@@ -261,6 +301,19 @@ def main() -> None:
         advanced_screen.append(cid)
 
         if need_dev:
+            # A screen survivor gets its own immediately-adjacent champion DEV
+            # control. Frozen DEV rows remain the hash/token/efficiency anchor;
+            # live control rows are used only for TPS normalization.
+            dev_control_candidate = run_live_dev_control(
+                cfg,
+                args.campaign,
+                db_path,
+                reference_candidate,
+                args.dev_prompt_file,
+                env,
+                cid,
+            )
+
             run([
                 sys.executable, "-m", "tuner.suite",
                 "--campaign", args.campaign,
@@ -273,7 +326,11 @@ def main() -> None:
             ], env)
 
             dev_decision, dev_reason, details = evaluate_dev_gate(
-                cfg, connect(db_path), cid, reference_candidate
+                cfg,
+                connect(db_path),
+                cid,
+                reference_candidate,
+                performance_reference_candidate=dev_control_candidate,
             )
             print(f"DEV {cid}: {dev_decision.upper()} ({dev_reason})")
             if details:
