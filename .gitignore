@@ -1,0 +1,16 @@
+# Local autotuner state
+results/*.sqlite
+results/*.sqlite-*
+candidates/generated/
+tensor-cache/
+
+# A real holdout should stay out of the repo so it remains sealed.
+tuner/prompts/holdout.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# macOS
+.DS_Store
