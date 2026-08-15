@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tomllib
 from pathlib import Path
 from typing import Any
 
 
 def expand_path(value: str | Path) -> Path:
-    return Path(value).expanduser().resolve()
+    text = os.path.expandvars(str(value))
+    return Path(text).expanduser().resolve()
 
 
 def load_campaign(path: str | Path) -> dict[str, Any]:
