@@ -1,0 +1,72 @@
+[
+  {
+    "id": "dev-python-bugfix",
+    "category": "python-debugging",
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nA Python function that deduplicates a list while preserving order sometimes returns duplicates when values are unhashable. Explain the bug and implement a robust replacement with type hints.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-typescript-refactor",
+    "category": "typescript-coding",
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nRefactor a TypeScript function that fetches three independent endpoints sequentially so the requests execute concurrently, preserve useful error messages, and return a typed result object. Show the code.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-sql-window",
+    "category": "sql",
+    "max_tokens": 192,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nWrite PostgreSQL that returns each customer's most recent order, total lifetime spend, and rank by lifetime spend within country. Tables are customers(id,country) and orders(id,customer_id,created_at,total).<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-json-constrained",
+    "category": "structured-output",
+    "max_tokens": 128,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nReturn only valid JSON with keys severity, likely_cause, and next_steps for this incident: API latency jumped from 90 ms to 2.4 s immediately after a database connection-pool limit was reduced from 80 to 10. next_steps must be an array of exactly three strings.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-algorithm-reasoning",
+    "category": "reasoning",
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nYou have a stream of integers too large to store. Design an algorithm to estimate the number of distinct values using bounded memory. Explain the core idea, update rule, and main accuracy tradeoff.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-technical-prose",
+    "category": "technical-explanation",
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nExplain why speculative decoding can improve tokens per second even though the target model still verifies proposed tokens. Distinguish drafter cost, verification batching, acceptance rate, and memory bandwidth.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-code-review",
+    "category": "code-review",
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nReview this pseudocode for a worker queue: pop job; mark job complete; execute job; retry on exception. Identify the correctness problems and propose an at-least-once design that handles crashes safely.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-short-factual",
+    "category": "factual-explanation",
+    "max_tokens": 128,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nWhat is the difference between throughput and latency in a computer system? Give one concrete example where improving one can worsen the other.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-transform",
+    "category": "code-transformation",
+    "max_tokens": 256,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nConvert a recursive depth-first traversal of a binary tree into an iterative traversal using an explicit stack. Preserve preorder visitation and explain why the right child must be pushed before the left child.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  },
+  {
+    "id": "dev-longer-context",
+    "category": "context-following",
+    "max_tokens": 192,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nA service has four constraints: requests must remain idempotent; duplicate messages are possible; processing may take 30 seconds; the broker's visibility timeout is 20 seconds; and changing brokers is not allowed. Propose a safe processing design and explicitly address every constraint. Do not recommend simply increasing the visibility timeout.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  }
+]
