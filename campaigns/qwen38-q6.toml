@@ -1,7 +1,7 @@
 [campaign]
 name = "qwen38-q6"
 target = "~/models/Qwen3.8-27B-MLX-6bit-FP16-Q8HEAD"
-pristine_mtp_shard = "/Users/skylinej17/.cache/huggingface/hub/models--Qwen--Qwen3.8-27B/snapshots/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/model-00018-of-00018.safetensors"
+pristine_mtp_shard = "~/.cache/huggingface/hub/models--Qwen--Qwen3.8-27B/snapshots/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/model-00018-of-00018.safetensors"
 output_dir = "~/models/autotune/qwen38-q6"
 draft_kind = "mtp"
 block_size = 4
@@ -19,6 +19,7 @@ draft = "~/models/Qwen3.8-27B-MTP-G4-U3-D4-Q6ATTN-FCQ6"
 mean_tps = 27.556
 median_tps = 27.561
 rounds = 138
+tokens = 512
 modules = { "layers.0.mlp.gate_proj" = { bits = 4, group_size = 64 }, "layers.0.mlp.up_proj" = { bits = 3, group_size = 64 }, "layers.0.mlp.down_proj" = { bits = 4, group_size = 64 }, "layers.0.self_attn.q_proj" = { bits = 6, group_size = 64 }, "layers.0.self_attn.k_proj" = { bits = 6, group_size = 64 }, "layers.0.self_attn.v_proj" = { bits = 6, group_size = 64 }, "layers.0.self_attn.o_proj" = { bits = 6, group_size = 64 }, "fc" = { bits = 6, group_size = 64 } }
 
 [search."layers.0.mlp.gate_proj"]
@@ -54,8 +55,19 @@ bits = [4, 5, 6, 8]
 group_size = [32, 64, 128]
 
 [promotion]
-# Relative screen rules; final promotion still requires DEV/holdout gates.
+# Canonical screen rules. Raw rounds are compared only after token count and
+# exact output hash match the frozen champion reference.
 equal_round_min_tps_ratio = 0.995
 one_extra_round_min_tps_ratio = 1.005
 reject_round_delta_at_or_above = 2
 production_runs = 10
+
+# DEV is a real promotion gate, not just a report. Every DEV output must be
+# byte-identical to the frozen champion reference. Efficiency is normalized as
+# tokens/round so prompts that terminate at different lengths remain comparable.
+dev_min_prompts = 8
+dev_min_prompt_tpr_ratio = 0.995
+dev_min_non_regress_prompts = 8
+dev_min_mean_tpr_ratio = 0.995
+dev_min_mean_tps_ratio = 0.995
+dev_min_efficiency_wins_if_screen_improves = 5
