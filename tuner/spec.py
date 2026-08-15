@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,38 @@ def load_campaign(path: str | Path) -> dict[str, Any]:
         cfg = tomllib.load(f)
     cfg["_path"] = str(p)
     return cfg
+
+
+def campaign_environment(cfg: dict[str, Any]) -> dict[str, str]:
+    """Return a copy of the current environment with campaign flags applied."""
+    env = os.environ.copy()
+    env_cfg = cfg.get("environment", {})
+    for key, value in env_cfg.get("set", {}).items():
+        env[str(key)] = str(value)
+    for key in env_cfg.get("unset", []):
+        env.pop(str(key), None)
+    return env
+
+
+def ensure_campaign_environment(cfg: dict[str, Any], module_name: str) -> None:
+    """Re-exec a standalone tuner CLI if campaign runtime flags are not active.
+
+    Some MLX custom paths are selected from environment variables. A direct
+    ``python -m tuner.benchmark`` or ``python -m tuner.suite`` invocation must
+    therefore enter Python with the same environment that ``run_campaign``
+    supplies to its subprocesses. If the current process differs, re-exec it
+    once with the campaign environment before any model work begins.
+    """
+    desired = campaign_environment(cfg)
+    keys = set(cfg.get("environment", {}).get("set", {})) | {
+        str(k) for k in cfg.get("environment", {}).get("unset", [])
+    }
+    if all(os.environ.get(key) == desired.get(key) for key in keys):
+        return
+
+    argv = [sys.executable, "-m", module_name, *sys.argv[1:]]
+    print(f"Re-execing {module_name} with campaign runtime environment...", flush=True)
+    os.execvpe(sys.executable, argv, desired)
 
 
 def load_candidate(path: str | Path) -> dict[str, Any]:
