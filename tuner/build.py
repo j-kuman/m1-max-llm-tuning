@@ -25,8 +25,11 @@ def build_candidate(campaign: dict, candidate: dict, output: Path, force: bool =
     base_draft = expand_path(candidate.get("base_draft", campaign["champion"]["draft"]))
 
     if output.exists():
-        if not force:
-            raise RuntimeError(f"Refusing to overwrite {output}; pass --force to replace it")
+        complete = (output / "autotune-manifest.json").exists()
+        if complete and not force:
+            raise RuntimeError(f"Refusing to overwrite completed build {output}; pass --force to replace it")
+        if not complete and not force:
+            print("Removing incomplete candidate build:", output)
         shutil.rmtree(output)
     output.mkdir(parents=True)
 
