@@ -57,7 +57,13 @@ def run_component(
     }
     cmd = [_format(str(part), ctx) for part in command]
     cwd = expand_path(_format(str(spec.get("cwd", ".")), ctx))
+
     env = os.environ.copy()
+    campaign_env = cfg.get("environment", {})
+    for key, value in campaign_env.get("set", {}).items():
+        env[str(key)] = _format(str(value), ctx)
+    for key in campaign_env.get("unset", []):
+        env.pop(str(key), None)
     for key, value in spec.get("env", {}).items():
         env[str(key)] = _format(str(value), ctx)
     for key in spec.get("unset_env", []):
