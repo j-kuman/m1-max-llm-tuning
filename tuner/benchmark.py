@@ -18,7 +18,7 @@ from .gates import (
     load_reference,
     require_exact_match,
 )
-from .spec import expand_path, load_campaign
+from .spec import ensure_campaign_environment, expand_path, load_campaign
 
 
 def load_prompt(path: Path, prompt_id: str) -> dict:
@@ -45,6 +45,7 @@ def main() -> None:
     args = ap.parse_args()
 
     campaign = load_campaign(args.campaign)
+    ensure_campaign_environment(campaign, "tuner.benchmark")
     c = campaign["campaign"]
     target_path = expand_path(c["target"])
     draft_path = expand_path(args.draft)
