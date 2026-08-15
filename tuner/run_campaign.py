@@ -19,6 +19,16 @@ def run(cmd: list[str], env: dict[str, str]) -> None:
     subprocess.run(cmd, check=True, env=env)
 
 
+def campaign_env(cfg: dict) -> dict[str, str]:
+    env = os.environ.copy()
+    env_cfg = cfg.get("environment", {})
+    for key, value in env_cfg.get("set", {}).items():
+        env[str(key)] = str(value)
+    for key in env_cfg.get("unset", []):
+        env.pop(str(key), None)
+    return env
+
+
 def ensure_canonical_reference(
     cfg: dict,
     campaign_path: str,
@@ -97,9 +107,7 @@ def main() -> None:
     candidate_root = Path(args.candidate_root) / name
     candidate_root.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
-    env["MLX_QMV_FAST_M4"] = "1"
-    env.pop("MLX_QMV_FAST_M3", None)
+    env = campaign_env(cfg)
 
     reference_candidate = champion_reference_id(cfg)
     ensure_canonical_reference(
