@@ -1,0 +1,9 @@
+[
+  {
+    "id": "canonical-lru-python",
+    "category": "python-coding",
+    "max_tokens": 512,
+    "temperature": 0.0,
+    "text": "<|im_start|>user\nImplement an LRU cache in Python using a dictionary and doubly linked list. Include type hints and a usage example.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+  }
+]
