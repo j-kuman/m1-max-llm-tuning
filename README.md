@@ -1,45 +1,46 @@
 # M1 Max LLM Tuning
 
-Performance engineering notes, benchmark records, source patches, benchmark harnesses, environment snapshots, and reproducible tuning experiments for running modern local LLMs on Apple M1 Max hardware.
+Performance engineering notes, benchmark records, source patches, benchmark harnesses, environment snapshots, reproducible tuning experiments, and an emerging config-driven autotuner for modern local LLMs on Apple M1 Max hardware.
 
-## Current milestone: Project27
+## Current Qwen3.8-27B Q6 state
 
-**Qwen3.8-27B Q6 on one 64GB M1 Max**
+The frozen Project27 milestone remains preserved at **27.305 tok/s sustained mean** with Q3 MLP + Q6 attention MTP and 139 verification rounds.
 
-- 27.305 tok/s sustained mean
-- 27.315 tok/s median
-- 27.272 tok/s minimum across 10 measured 512-token runs
-- 139 speculative verification rounds on every measured run
-- 24.858 GB peak memory
-- deterministic cross-drafter output matched the prior exact Q6 drafter character-for-character
+The current experimental champion has moved beyond that baseline:
 
-Final stack:
+- **27.556 tok/s sustained mean**
+- **27.561 tok/s median**
+- 27.518 tok/s minimum across 10 measured 512-token runs
+- 27.579 tok/s maximum
+- 138 speculative verification rounds on every measured run
+- exact deterministic text across the measured batch
+
+Current experimental stack:
 
 - Q6 affine group-64 target
 - custom RAWX M4 target kernel
 - Q8 affine group-64 lm_head with exact SHARED4 argmax path
 - native MTP block size 4
-- mixed MTP precision: Q3 MLP + Q6 attention
+- mixed MTP MLP precision: gate Q4 g64 / up Q3 g64 / down Q4 g64
+- MTP attention Q6 g64
+- MTP `fc` Q6 g64
 
-## Full tuning log
+## Autotuner
 
-See [`PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md`](PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md) for the complete tuning history, benchmark methodology, failed experiments, artifact hashes, restoration notes, and portability ideas for other Qwen3.8 quants and the two-M1-Max DeepSeek V4 Flash TP project.
+[`tuner/README.md`](tuner/README.md) documents the new config-driven tuning framework. The initial implementation includes campaign definitions, local-neighborhood search, a generic mixed-precision MTP builder, loader validation, SQLite result storage, isolated production benchmarking, DEV/holdout suite execution, promotion rules, and a leaderboard.
+
+The first campaign is [`campaigns/qwen38-q6.toml`](campaigns/qwen38-q6.toml). The goal is to make Q4/Q5/Q6/Q8 targets and new model variants separate campaigns rather than repeating the entire tuning process manually.
+
+## Full Project27 tuning log
+
+See [`PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md`](PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md) for the original tuning history, benchmark methodology, failed experiments, artifact hashes, restoration notes, and portability ideas.
 
 ## Actual implementation artifacts
 
-This repo is intended to preserve more than notes. [`project27/MANIFEST.md`](project27/MANIFEST.md) defines the reproducibility bundle: the actual benchmark scripts, MTP builders, MLX RAWX source snapshots/patches, mlx-vlm Q8 SHARED4 patch and exact installed source snapshot, negative-result patches, environment metadata, configs, and SHA-256 manifests.
+[`project27/MANIFEST.md`](project27/MANIFEST.md) defines the reproducibility bundle: benchmark scripts, MTP builders, MLX RAWX source snapshots/patches, the mlx-vlm Q8 SHARED4 patch and exact installed source snapshot, negative-result patches, environment metadata, configs, and SHA-256 manifests.
 
-The source-of-truth versions of several of those files currently live on the tuning Mac under `~/src/mlx-m1-qmv`, `~/project24-patches`, and `/tmp`. The repo contains a one-command capture script so those exact local files—not reconstructed approximations—can be checked in:
-
-```bash
-cd ~/src/m1-max-llm-tuning
-bash scripts/snapshot_local_project27.sh
-```
-
-That script records the local MLX git history/tag/base state, exports the final RAWX source files and patch, copies the exact Q8 SHARED4 `language.py`/patch, captures the benchmark and MTP-builder scripts, stores target/drafter configs plus hashes, snapshots the Python/Metal environment, generates `project27/SHA256SUMS.txt`, commits, and pushes the result.
+The snapshot already checked into this repository preserves the exact Project27 implementation state. Model weight files themselves are intentionally not committed; configs, precision maps, hashes, code, patches, and modified-source snapshots are.
 
 ## Scope
 
-Model weight files are not committed here; the repository records configs, quantization maps, hashes, code, patches, exact modified-source snapshots, and benchmark harnesses needed to reconstruct the tuned stack.
-
-Future work will include Project28 experiments, Qwen3.8 Q4/Q5/Q8 target tuning, and DeepSeek V4 Flash 0731 tensor-parallel optimization across two 64GB M1 Max machines.
+Near-term work includes finishing the unattended autotune campaign runner, validating numerical tuning gains against a multi-prompt DEV suite and sealed local holdout, continuing the Qwen3.8 Q6 chase toward 28 tok/s, then applying the same machinery to Q4/Q5/Q8 target quants, alternate model variants, and the two-M1-Max DeepSeek tensor-parallel project.
