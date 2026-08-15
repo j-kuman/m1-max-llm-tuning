@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from .db import connect
@@ -92,6 +93,8 @@ def main() -> None:
     ap.add_argument("--campaign", required=True)
     ap.add_argument("--budget", type=int, default=8)
     ap.add_argument("--screen-runs", type=int, default=1)
+    ap.add_argument("--control-runs", type=int, default=1,
+                    help="Fresh champion runs used as the same-session screen performance baseline")
     ap.add_argument("--db", default="results/tuning.sqlite")
     ap.add_argument("--candidate-root", default="candidates/generated")
     ap.add_argument("--run-dev", action="store_true")
@@ -119,9 +122,10 @@ def main() -> None:
     )
     assert canonical_reference is not None
 
-    # Correctness references are frozen by token count/hash, while screening TPS
-    # must be normalized to the same tuner harness. Historical production TPS can
-    # differ materially because of protocol or machine-state changes.
+    # Frozen reference rows are the correctness anchor. Their performance values
+    # are retained for audit/history but are intentionally not trusted across
+    # tuning sessions because macOS GPU/desktop state can move throughput by more
+    # than the small gains we are searching for.
     canonical_reference_stats = load_screen_stats(
         connect(db_path), name, reference_candidate, args.prompt_id, "reference"
     )
@@ -130,19 +134,55 @@ def main() -> None:
     if canonical_reference_stats.min_rounds != canonical_reference_stats.max_rounds:
         raise RuntimeError("canonical champion reference has nondeterministic round telemetry")
 
+    screen_control_stats = canonical_reference_stats
+    control_candidate = None
+    if args.budget > 0:
+        if args.control_runs < 1:
+            raise RuntimeError("--control-runs must be >= 1 when --budget is nonzero")
+        control_candidate = f"control-live-{int(time.time())}"
+        print("\nEstablishing fresh same-session champion control...")
+        run([
+            sys.executable, "-m", "tuner.benchmark",
+            "--campaign", args.campaign,
+            "--draft", str(expand_path(cfg["champion"]["draft"])),
+            "--candidate-id", control_candidate,
+            "--stage", "screen",
+            "--runs", str(args.control_runs),
+            "--warmups", "1",
+            "--db", str(db_path),
+            "--prompt-id", args.prompt_id,
+            "--reference-candidate", reference_candidate,
+        ], env)
+        fresh = load_screen_stats(
+            connect(db_path), name, control_candidate, args.prompt_id, "screen"
+        )
+        if fresh is None:
+            raise RuntimeError("fresh same-session champion control produced no valid rows")
+        if fresh.min_rounds != fresh.max_rounds:
+            raise RuntimeError("fresh same-session champion control has nondeterministic rounds")
+        if fresh.min_rounds != canonical_reference_stats.min_rounds:
+            raise RuntimeError(
+                "fresh champion control changed verification rounds versus frozen reference: "
+                f"{fresh.min_rounds} vs {canonical_reference_stats.min_rounds}"
+            )
+        screen_control_stats = fresh
+
     screen_cfg = deepcopy(cfg)
     screen_cfg["champion"] = dict(cfg["champion"])
-    screen_cfg["champion"]["mean_tps"] = canonical_reference_stats.mean_tps
-    screen_cfg["champion"]["rounds"] = canonical_reference_stats.min_rounds
+    screen_cfg["champion"]["mean_tps"] = screen_control_stats.mean_tps
+    screen_cfg["champion"]["rounds"] = screen_control_stats.min_rounds
 
     historical_tps = float(cfg["champion"]["mean_tps"])
-    drift = canonical_reference_stats.mean_tps / historical_tps - 1.0
+    drift = screen_control_stats.mean_tps / historical_tps - 1.0
+    label = "live same-session" if control_candidate else "frozen reference"
     print(
-        "screen control baseline:",
-        f"{canonical_reference_stats.mean_tps:.3f} tok/s,",
-        f"{canonical_reference_stats.min_rounds} rounds",
+        f"screen control baseline ({label}):",
+        f"{screen_control_stats.mean_tps:.3f} tok/s,",
+        f"{screen_control_stats.min_rounds} rounds",
         f"(historical production {historical_tps:.3f}, drift {drift:+.2%})",
     )
+    if control_candidate:
+        print("screen control candidate:", control_candidate)
 
     need_dev = args.run_dev or args.run_production
     if need_dev:
