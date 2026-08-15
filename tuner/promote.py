@@ -34,7 +34,7 @@ def load_screen_stats(
     row = conn.execute(
         """
         SELECT AVG(tps), AVG(rounds), AVG(tokens),
-               AVG(COALESCE(tokens_per_round, 1.0 * tokens / rounds)),
+               AVG(COALESCE(tokens_per_round, CASE WHEN rounds > 0 THEN 1.0 * tokens / rounds END)),
                COUNT(*), MIN(tokens), MAX(tokens), MIN(rounds), MAX(rounds),
                COUNT(DISTINCT text_sha256), MIN(text_sha256)
         FROM runs
@@ -44,6 +44,8 @@ def load_screen_stats(
     ).fetchone()
     if not row or not row[4]:
         return None
+    if row[3] is None:
+        raise RuntimeError("candidate has no valid positive-round efficiency data")
     return ScreenStats(
         mean_tps=float(row[0]),
         mean_rounds=float(row[1]),
@@ -82,6 +84,8 @@ def classify(
         )
     if stats.min_tokens != ref_tokens:
         return "reject", f"candidate tokens={stats.min_tokens} != champion canonical tokens={ref_tokens}"
+    if stats.min_rounds <= 0:
+        return "reject", f"invalid verification round count {stats.min_rounds}; telemetry failed closed"
     if stats.min_rounds != stats.max_rounds:
         return "reject", (
             f"verification rounds are nondeterministic across identical greedy runs: "
@@ -131,7 +135,7 @@ def evaluate_dev_gate(
     cand_rows = conn.execute(
         """
         SELECT prompt_id, AVG(tps),
-               AVG(COALESCE(tokens_per_round, 1.0 * tokens / rounds)),
+               AVG(COALESCE(tokens_per_round, CASE WHEN rounds > 0 THEN 1.0 * tokens / rounds END)),
                MIN(tokens), MAX(tokens), COUNT(DISTINCT text_sha256), MIN(text_sha256)
         FROM runs
         WHERE campaign = ? AND candidate = ? AND stage = 'dev'
@@ -144,7 +148,7 @@ def evaluate_dev_gate(
     ref_rows = conn.execute(
         """
         SELECT prompt_id, AVG(tps),
-               AVG(COALESCE(tokens_per_round, 1.0 * tokens / rounds)),
+               AVG(COALESCE(tokens_per_round, CASE WHEN rounds > 0 THEN 1.0 * tokens / rounds END)),
                MIN(tokens), MAX(tokens), COUNT(DISTINCT text_sha256), MIN(text_sha256)
         FROM runs
         WHERE campaign = ? AND candidate = ? AND stage = 'reference'
@@ -169,8 +173,12 @@ def evaluate_dev_gate(
     for prompt_id in sorted(cand):
         c = cand[prompt_id]
         r = refs[prompt_id]
+        if c[2] is None or r[2] is None:
+            return "reject", f"DEV invalid round telemetry on {prompt_id}", {}
         c_tps, c_tpr = float(c[1]), float(c[2])
         r_tps, r_tpr = float(r[1]), float(r[2])
+        if c_tpr <= 0 or r_tpr <= 0:
+            return "reject", f"DEV non-positive tokens/round on {prompt_id}", {}
         c_min_tok, c_max_tok, c_hashes, c_hash = int(c[3]), int(c[4]), int(c[5]), str(c[6])
         r_min_tok, r_max_tok, r_hashes, r_hash = int(r[3]), int(r[4]), int(r[5]), str(r[6])
 
