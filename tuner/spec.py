@@ -9,8 +9,17 @@ from typing import Any
 
 
 def expand_path(value: str | Path) -> Path:
+    """Expand a user/config path without dereferencing its final symlink.
+
+    Hugging Face snapshot files are commonly symlinks such as
+    ``model-00018-of-00018.safetensors`` pointing into an extensionless
+    ``blobs/<sha>`` object. ``Path.resolve()`` follows that link and discards
+    the filename suffix that loaders such as ``mlx.load`` use to select the
+    file format. We still want an absolute path, just not symlink resolution.
+    """
     text = os.path.expandvars(str(value))
-    return Path(text).expanduser().resolve()
+    expanded = Path(text).expanduser()
+    return Path(os.path.abspath(expanded))
 
 
 def load_campaign(path: str | Path) -> dict[str, Any]:
