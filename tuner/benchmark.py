@@ -12,6 +12,12 @@ import mlx_vlm
 from mlx_vlm.speculative import load_drafter
 
 from .db import connect, insert_run
+from .gates import (
+    champion_reference_id,
+    extract_round_stats,
+    load_reference,
+    require_exact_match,
+)
 from .spec import expand_path, load_campaign
 
 
@@ -30,11 +36,12 @@ def main() -> None:
     ap.add_argument("--candidate-id", required=True)
     ap.add_argument("--prompt-file", default="tuner/prompts/canonical.json")
     ap.add_argument("--prompt-id", default="canonical-lru-python")
-    ap.add_argument("--stage", choices=("screen", "dev", "production", "holdout"), default="screen")
+    ap.add_argument("--stage", choices=("reference", "screen", "dev", "production", "holdout"), default="screen")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--warmups", type=int, default=1)
     ap.add_argument("--pause", type=float, default=5.0)
     ap.add_argument("--db", default="results/tuning.sqlite")
+    ap.add_argument("--reference-candidate")
     args = ap.parse_args()
 
     campaign = load_campaign(args.campaign)
@@ -47,6 +54,20 @@ def main() -> None:
     block_size = int(c.get("block_size", 4))
     draft_kind_requested = c.get("draft_kind", "mtp")
 
+    if temperature != 0.0:
+        raise RuntimeError("autotuner exactness gates currently require temperature=0")
+
+    conn = connect(args.db)
+    reference_candidate = args.reference_candidate or champion_reference_id(campaign)
+    reference = None
+    if args.stage != "reference":
+        reference = load_reference(conn, c["name"], reference_candidate, args.prompt_id)
+        if reference is None:
+            raise RuntimeError(
+                f"missing exact reference for {args.prompt_id!r}; establish it first with "
+                f"--stage reference --candidate-id {reference_candidate} using the champion drafter"
+            )
+
     print("Loading target ONCE...")
     model, processor = mlx_vlm.load(str(target_path))
     print("Loading drafter ONCE...")
@@ -58,7 +79,6 @@ def main() -> None:
     mx.eval(draft.parameters())
     mx.synchronize()
 
-    conn = connect(args.db)
     rows: list[dict] = []
 
     def one_run(i: int, measured: bool) -> dict:
@@ -78,9 +98,17 @@ def main() -> None:
         )
         mx.synchronize()
         wall = time.perf_counter() - t0
-        accepts = list(getattr(draft, "accept_lens", []))
-        rounds = len(accepts)
-        text_sha = hashlib.sha256(result.text.encode()).hexdigest()
+        tokens = int(result.generation_tokens)
+        rounds, tokens_per_round = extract_round_stats(draft, tokens)
+        text_sha = hashlib.sha256(result.text.encode("utf-8")).hexdigest()
+
+        if reference is not None:
+            require_exact_match(
+                reference,
+                tokens=tokens,
+                text_sha256=text_sha,
+                candidate=args.candidate_id,
+            )
 
         row = {
             "campaign": c["name"],
@@ -90,10 +118,11 @@ def main() -> None:
             "run_index": i,
             "target_path": str(target_path),
             "draft_path": str(draft_path),
-            "tokens": int(result.generation_tokens),
+            "tokens": tokens,
             "tps": float(result.generation_tps),
             "wall_seconds": wall,
             "rounds": rounds,
+            "tokens_per_round": tokens_per_round,
             "peak_gb": float(result.peak_memory),
             "text_sha256": text_sha,
             "modules_json": None,
@@ -102,7 +131,8 @@ def main() -> None:
         print(
             f"{'MEASURED' if measured else 'WARMUP':8s} {i:2d}: "
             f"{row['tokens']:3d} tok | {row['tps']:7.3f} tok/s | "
-            f"wall={wall:7.3f}s | rounds={rounds:3d} | peak={row['peak_gb']:.3f} GB"
+            f"wall={wall:7.3f}s | rounds={rounds:3d} | "
+            f"tok/round={tokens_per_round:.4f} | peak={row['peak_gb']:.3f} GB"
         )
         if measured:
             insert_run(conn, row)
@@ -123,6 +153,7 @@ def main() -> None:
         speeds = [r["tps"] for r in rows]
         rounds = [r["rounds"] for r in rows]
         hashes = [r["text_sha256"] for r in rows]
+        efficiencies = [r["tokens_per_round"] for r in rows]
         print("\n========== SUMMARY ==========")
         print("runs:  ", " ".join(f"{x:.3f}" for x in speeds))
         print(f"median: {statistics.median(speeds):.3f} tok/s")
@@ -131,7 +162,9 @@ def main() -> None:
         print(f"max:    {max(speeds):.3f} tok/s")
         print(f"spread: {max(speeds)-min(speeds):.3f} tok/s")
         print("round counts:", rounds)
+        print("mean tokens/round:", f"{statistics.mean(efficiencies):.4f}")
         print("all generated text identical:", len(set(hashes)) == 1)
+        print("exact reference match:", "established" if args.stage == "reference" else "PASS")
         print("stored in:", args.db)
 
 
