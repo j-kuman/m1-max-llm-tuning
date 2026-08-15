@@ -12,6 +12,7 @@ This directory turns the manual Project27/28 workflow into a config-driven tunin
 - `suite.py` — DEV/holdout multi-prompt runner with one target/drafter loaded once
 - `promote.py` — relative round/TPS screen rules
 - `results.py` — SQLite leaderboard
+- `run_campaign.py` — budgeted unattended v0 loop: generate -> build -> validate -> screen -> optional DEV/production
 - `db.py` — result schema/storage
 - `prompts/canonical.json` — the historical LRU optimization prompt
 - `prompts/dev.json` — multi-domain development validation suite
@@ -22,24 +23,52 @@ The real holdout should be created locally as `tuner/prompts/holdout.local.json`
 
 `../campaigns/qwen38-q6.toml` describes the current Qwen3.8-27B Q6 target campaign. A new target quant or model variant should get its own TOML file rather than modifying this one in place.
 
-The campaign separates:
+The campaign separates target/source paths, the current champion and measured reference, the exact module precision map, per-module local search spaces, and early promotion thresholds.
 
-- target path and MTP source shard
-- current champion path + measured reference TPS/rounds
-- exact module precision map
-- per-module local search spaces
-- early promotion thresholds
+## Fastest way to use v0
 
-## First-pass workflow
-
-From the repository root, in the Project27 MLX environment:
+From the repository root, in the Project27 MLX environment, run a small unattended screen budget:
 
 ```bash
-python -m tuner.search \
-  --campaign campaigns/qwen38-q6.toml
+python -m tuner.run_campaign \
+  --campaign campaigns/qwen38-q6.toml \
+  --budget 8 \
+  --screen-runs 1
 ```
 
-This emits one-coordinate candidate specs under `candidates/generated/qwen38-q6/`.
+The runner generates local one-coordinate neighbors, builds them under `~/models/autotune/qwen38-q6/`, validates the loader-visible quantization map, executes isolated canonical screens, stores results in `results/tuning.sqlite`, and applies relative round/TPS rules. It deliberately **does not update the champion automatically**.
+
+Add DEV for candidates that pass the screen:
+
+```bash
+python -m tuner.run_campaign \
+  --campaign campaigns/qwen38-q6.toml \
+  --budget 8 \
+  --screen-runs 1 \
+  --run-dev
+```
+
+For a tightly controlled small budget, production runs can also be requested:
+
+```bash
+python -m tuner.run_campaign \
+  --campaign campaigns/qwen38-q6.toml \
+  --budget 3 \
+  --screen-runs 1 \
+  --run-dev \
+  --run-production \
+  --production-runs 10
+```
+
+Because production runs are expensive, the recommended default is to let the campaign runner screen candidates and explicitly choose finalists for the 10-run production test.
+
+## Manual workflow
+
+Generate candidate specs:
+
+```bash
+python -m tuner.search --campaign campaigns/qwen38-q6.toml
+```
 
 Build one candidate:
 
@@ -78,7 +107,7 @@ python -m tuner.promote \
   --stage screen
 ```
 
-For a serious candidate, run DEV before final promotion:
+Run DEV:
 
 ```bash
 MLX_QMV_FAST_M4=1 env -u MLX_QMV_FAST_M3 \
@@ -89,7 +118,7 @@ python -m tuner.suite \
   --stage dev
 ```
 
-Then run the isolated 10-run production benchmark:
+Run the isolated production benchmark:
 
 ```bash
 MLX_QMV_FAST_M4=1 env -u MLX_QMV_FAST_M3 \
@@ -105,25 +134,23 @@ python -m tuner.benchmark \
 Leaderboard:
 
 ```bash
-python -m tuner.results \
-  --campaign qwen38-q6 \
-  --stage production
+python -m tuner.results --campaign qwen38-q6 --stage production
 ```
 
 ## Search strategy
 
-v0 intentionally generates **one-coordinate mutations** rather than a full Cartesian product. The next layer will automate the funnel:
+v0 intentionally generates **one-coordinate mutations** rather than a full Cartesian product. The funnel is:
 
 1. generate local neighbors
-2. build/cache module variants
-3. one-run canonical screen
-4. reject candidates with bad round/TPS tradeoffs
-5. component microbench when the mutation has a measurable mechanical path
-6. short multi-run screen
-7. DEV validation
-8. isolated 10-run production benchmark
-9. sealed holdout before final promotion
-10. update champion and generate the next neighborhood
+2. build candidates from pristine BF16 module tensors
+3. validate the actual loader-visible precision map
+4. one-run canonical screen
+5. reject bad round/TPS tradeoffs
+6. DEV validation for serious candidates
+7. isolated 10-run production benchmark for finalists
+8. sealed local holdout before a major promotion
+9. explicitly update the campaign champion
+10. generate the next neighborhood
 
 Pairwise interaction sweeps should only be opened around useful boundaries, such as the observed FC precision/group-size interaction, rather than blindly multiplying every bit and group-size combination.
 
@@ -139,6 +166,6 @@ campaigns/qwen38-q8.toml
 
 Kernel work can be inherited when quantization geometry/packing is compatible. Drafter precision maps should be re-optimized per target because speculative acceptance follows the target's quantized trajectory.
 
-## Status
+## Next implementation layer
 
-This is a functional **v0 foundation**, not yet the unattended optimizer. The next implementation step is a campaign runner that executes the entire screen/build/validate/DEV/production funnel under a run budget and updates the SQLite leaderboard automatically.
+The current runner removes most of the human copy/paste work but still rebuilds whole candidates and uses simple rule-based local search. The next layer should add a reusable per-module tensor cache, component microbench plugins, pairwise interaction generation around discovered boundaries, DEV-vs-reference comparison, and explicit champion promotion that rewrites the campaign only after all gates pass.
