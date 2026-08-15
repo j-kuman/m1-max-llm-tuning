@@ -8,6 +8,10 @@ block_size = 4
 max_tokens = 512
 temperature = 0.0
 
+[environment]
+set = { MLX_QMV_FAST_M4 = "1" }
+unset = ["MLX_QMV_FAST_M3"]
+
 [quantization]
 bits = 6
 group_size = 64
@@ -65,7 +69,7 @@ production_runs = 10
 # DEV is a real promotion gate, not just a report. Every DEV output must be
 # byte-identical to the frozen champion reference. Efficiency is normalized as
 # tokens/round so prompts that terminate at different lengths remain comparable.
-dev_min_prompts = 8
+dev_min_prompts = 10
 dev_min_prompt_tpr_ratio = 0.995
 dev_min_non_regress_prompts = 8
 dev_min_mean_tpr_ratio = 0.995
