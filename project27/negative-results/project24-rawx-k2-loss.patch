@@ -1,0 +1,105 @@
+diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
+index ef2616d..26e053a 100644
+--- a/mlx/backend/metal/kernels/quantized.h
++++ b/mlx/backend/metal/kernels/quantized.h
+@@ -989,19 +989,20 @@ METAL_FUNC void qmv_fast_m3_impl(
+ //
+ // Preserve the original raw activation sum used for affine bias.
+ template <typename T, typename U, int values_per_thread>
+-inline U load_vector_q6_raw_fp32(
++inline U load_vector_q6_raw_halfx(
+     const device T* x,
+-    thread U* x_thread) {
++    thread T* x_thread) {
+ 
+   static_assert(values_per_thread == 8, "Q6 RAWX loader expects 8 values");
+ 
+   U sum = 0;
+ 
+   for (int i = 0; i < values_per_thread; i += 4) {
+-    // Deliberately preserve the same sum expression/order as
+-    // load_vector<..., 6>.
++    // Preserve RAWX's affine-bias sum expression/order exactly.
+     sum += x[i] + x[i + 1] + x[i + 2] + x[i + 3];
+ 
++    // Keep the original FP16 activations in registers and promote
++    // to FP32 only when consumed by the qdot.
+     x_thread[i]     = x[i];
+     x_thread[i + 1] = x[i + 1];
+     x_thread[i + 2] = x[i + 2];
+@@ -1011,7 +1012,7 @@ inline U load_vector_q6_raw_fp32(
+   return sum;
+ }
+ 
+-template <typename U>
++template <typename X, typename U>
+ inline void qdot_q6_8_m4_shared(
+     uint8_t w0,
+     uint8_t w1,
+@@ -1019,10 +1020,10 @@ inline void qdot_q6_8_m4_shared(
+     uint8_t w3,
+     uint8_t w4,
+     uint8_t w5,
+-    const thread U* x0,
+-    const thread U* x1,
+-    const thread U* x2,
+-    const thread U* x3,
++    const thread X* x0,
++    const thread X* x1,
++    const thread X* x2,
++    const thread X* x3,
+     U scale,
+     U bias,
+     U sum0,
+@@ -1144,10 +1145,10 @@ METAL_FUNC void qmv_fast_m4_impl(
+ 
+   typedef float U;
+ 
+-  thread U x0_thread[values_per_thread];
+-  thread U x1_thread[values_per_thread];
+-  thread U x2_thread[values_per_thread];
+-  thread U x3_thread[values_per_thread];
++  thread T x0_thread[values_per_thread];
++  thread T x1_thread[values_per_thread];
++  thread T x2_thread[values_per_thread];
++  thread T x3_thread[values_per_thread];
+ 
+   thread U result0[results_per_simdgroup] = {0};
+   thread U result1[results_per_simdgroup] = {0};
+@@ -1190,19 +1191,18 @@ METAL_FUNC void qmv_fast_m4_impl(
+   device T* y2 = y1 + out_vec_size;
+   device T* y3 = y2 + out_vec_size;
+ 
+-  // FAST_M4 K4 experiment: process four 256-value K blocks
+-  // per outer iteration. Qwen3.8 target dimensions used here are
+-  // multiples of 1024, so there is no tail in this workload.
+-  for (int k = 0; k < in_vec_size; k += 4 * block_size) {
+-    for (int u = 0; u < 4; ++u) {
++  // RAWX K2 experiment: process two 256-value K blocks
++  // per outer iteration. Target dimensions are divisible by 512.
++  for (int k = 0; k < in_vec_size; k += 2 * block_size) {
++    for (int u = 0; u < 2; ++u) {
+     U sum0 =
+-        load_vector_q6_raw_fp32<T, U, values_per_thread>(x0, x0_thread);
++        load_vector_q6_raw_halfx<T, U, values_per_thread>(x0, x0_thread);
+     U sum1 =
+-        load_vector_q6_raw_fp32<T, U, values_per_thread>(x1, x1_thread);
++        load_vector_q6_raw_halfx<T, U, values_per_thread>(x1, x1_thread);
+     U sum2 =
+-        load_vector_q6_raw_fp32<T, U, values_per_thread>(x2, x2_thread);
++        load_vector_q6_raw_halfx<T, U, values_per_thread>(x2, x2_thread);
+     U sum3 =
+-        load_vector_q6_raw_fp32<T, U, values_per_thread>(x3, x3_thread);
++        load_vector_q6_raw_halfx<T, U, values_per_thread>(x3, x3_thread);
+ 
+     for (int row = 0; row < results_per_simdgroup; row++) {
+       const device uint8_t* wl =
+@@ -1224,7 +1224,7 @@ METAL_FUNC void qmv_fast_m4_impl(
+       uint8_t w4 = wl[4];
+       uint8_t w5 = wl[5];
+ 
+-      qdot_q6_8_m4_shared<U>(
++      qdot_q6_8_m4_shared<T, U>(
+           w0, w1, w2, w3, w4, w5,
+           x0_thread, x1_thread, x2_thread, x3_thread,
+           scale, bias,

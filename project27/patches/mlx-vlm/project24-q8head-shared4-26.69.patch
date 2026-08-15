@@ -1,0 +1,81 @@
+--- /Users/skylinej17/.venvs/mlx-dspark/lib/python3.14/site-packages/mlx_vlm/models/qwen3_5/language.py.pre-q8shared4	2026-08-15 07:13:46
++++ /Users/skylinej17/.venvs/mlx-dspark/lib/python3.14/site-packages/mlx_vlm/models/qwen3_5/language.py	2026-08-15 07:15:48
+@@ -272,6 +272,47 @@
+       }
+       return scale * accum + sum * bias;
+     }
++
++    // Q8 target-verification T=4 specialization.
++    //
++    // Reuse each Q8 weight byte across all four speculative tokens
++    // while preserving each token's FP32 accumulation order.
++    inline void qdot_q8_t4_shared(
++        const device uint8_t* w,
++        const thread float* x0,
++        const thread float* x1,
++        const thread float* x2,
++        const thread float* x3,
++        float scale,
++        float bias,
++        float sum0,
++        float sum1,
++        float sum2,
++        float sum3,
++        thread float& out0,
++        thread float& out1,
++        thread float& out2,
++        thread float& out3) {
++
++      float a0 = 0.0f;
++      float a1 = 0.0f;
++      float a2 = 0.0f;
++      float a3 = 0.0f;
++
++      for (int i = 0; i < VALUES_PER_THREAD; ++i) {
++        float q = float(w[i]);
++
++        a0 += x0[i] * q;
++        a1 += x1[i] * q;
++        a2 += x2[i] * q;
++        a3 += x3[i] * q;
++      }
++
++      out0 += scale * a0 + sum0 * bias;
++      out1 += scale * a1 + sum1 * bias;
++      out2 += scale * a2 + sum2 * bias;
++      out3 += scale * a3 + sum3 * bias;
++    }
+ """.replace("__BITS__", str(bits)).replace("__GS__", str(group_size))
+ 
+ 
+@@ -391,8 +432,28 @@
+         const device T* bl = bs + row * in_vec_size_g;
+         float s = float(sl[0]);
+         float b = float(bl[0]);
+-        for (int t = 0; t < VERIFY_T; ++t) {
+-          result[t][row] += qdot_exact(wl, x_thread[t], s, b, sums[t]);
++        if (BITS == 8 && VERIFY_T == 4) {
++          qdot_q8_t4_shared(
++              wl,
++              x_thread[0],
++              x_thread[1],
++              x_thread[2],
++              x_thread[3],
++              s,
++              b,
++              sums[0],
++              sums[1],
++              sums[2],
++              sums[3],
++              result[0][row],
++              result[1][row],
++              result[2][row],
++              result[3][row]);
++        } else {
++          for (int t = 0; t < VERIFY_T; ++t) {
++            result[t][row] += qdot_exact(
++                wl, x_thread[t], s, b, sums[t]);
++          }
+         }
+       }
+ 

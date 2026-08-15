@@ -1,0 +1,2 @@
+TARGET=/Users/skylinej17/models/Qwen3.8-27B-MLX-6bit-FP16-Q8HEAD
+7c1815b03db27fe43c1997a99501c276106b0697771b27668bfdf5e151125d9d  /Users/skylinej17/models/Qwen3.8-27B-MLX-6bit-FP16-Q8HEAD/config.json

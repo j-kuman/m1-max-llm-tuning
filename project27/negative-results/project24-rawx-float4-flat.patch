@@ -1,0 +1,96 @@
+diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
+index ef2616d..b54c54c 100644
+--- a/mlx/backend/metal/kernels/quantized.h
++++ b/mlx/backend/metal/kernels/quantized.h
+@@ -1118,6 +1118,82 @@ inline void qdot_q6_8_m4_shared(
+   out3 += scale * a3 + sum3 * bias;
+ }
+ 
++
++// FAST_M4 RAWX experiment:
++// represent the four independent M4 accumulation chains as float4 lanes.
++//
++// Each lane receives the same 12 FP32 accumulation steps, in the same
++// order as qdot_q6_8_m4_shared. No Q6 terms are reassociated.
++inline void qdot_q6_8_m4_float4(
++    uint8_t w0,
++    uint8_t w1,
++    uint8_t w2,
++    uint8_t w3,
++    uint8_t w4,
++    uint8_t w5,
++    const thread float* x0,
++    const thread float* x1,
++    const thread float* x2,
++    const thread float* x3,
++    float scale,
++    float bias,
++    float sum0,
++    float sum1,
++    float sum2,
++    float sum3,
++    thread float& out0,
++    thread float& out1,
++    thread float& out2,
++    thread float& out3) {
++
++  float4 a = float4(0.0f);
++  float q;
++
++  q = (w0 & 0x3f);
++  a += q * float4(x0[0], x1[0], x2[0], x3[0]);
++
++  q = static_cast<float>((w0 & 0xc0) >> 6);
++  a += q * float4(x0[1], x1[1], x2[1], x3[1]);
++
++  q = static_cast<float>((w1 & 0x0f) << 2);
++  a += q * float4(x0[1], x1[1], x2[1], x3[1]);
++
++  q = static_cast<float>((w1 & 0xf0) >> 4);
++  a += q * float4(x0[2], x1[2], x2[2], x3[2]);
++
++  q = static_cast<float>((w2 & 0x03) << 4);
++  a += q * float4(x0[2], x1[2], x2[2], x3[2]);
++
++  q = static_cast<float>((w2 & 0xfc) >> 2);
++  a += q * float4(x0[3], x1[3], x2[3], x3[3]);
++
++  q = (w3 & 0x3f);
++  a += q * float4(x0[4], x1[4], x2[4], x3[4]);
++
++  q = static_cast<float>((w3 & 0xc0) >> 6);
++  a += q * float4(x0[5], x1[5], x2[5], x3[5]);
++
++  q = static_cast<float>((w4 & 0x0f) << 2);
++  a += q * float4(x0[5], x1[5], x2[5], x3[5]);
++
++  q = static_cast<float>((w4 & 0xf0) >> 4);
++  a += q * float4(x0[6], x1[6], x2[6], x3[6]);
++
++  q = static_cast<float>((w5 & 0x03) << 4);
++  a += q * float4(x0[6], x1[6], x2[6], x3[6]);
++
++  q = static_cast<float>((w5 & 0xfc) >> 2);
++  a += q * float4(x0[7], x1[7], x2[7], x3[7]);
++
++  float4 sums = float4(sum0, sum1, sum2, sum3);
++  a = scale * a + bias * sums;
++
++  out0 += a.x;
++  out1 += a.y;
++  out2 += a.z;
++  out3 += a.w;
++}
++
+ template <typename T, int group_size, int bits>
+ METAL_FUNC void qmv_fast_m4_impl(
+     const device uint32_t* w,
+@@ -1224,7 +1300,7 @@ METAL_FUNC void qmv_fast_m4_impl(
+       uint8_t w4 = wl[4];
+       uint8_t w5 = wl[5];
+ 
+-      qdot_q6_8_m4_shared<U>(
++      qdot_q6_8_m4_float4(
+           w0, w1, w2, w3, w4, w5,
+           x0_thread, x1_thread, x2_thread, x3_thread,
+           scale, bias,

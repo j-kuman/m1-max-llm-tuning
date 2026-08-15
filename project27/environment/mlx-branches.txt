@@ -1,0 +1,31 @@
+  m1-affine-qmv-wide                8b6803c metal: share Q6 weights across M=3 qmv
+  project24-m3-3x2                  13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-4x1                  13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-4x4                  13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-5x2                  13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-meta-broadcast       13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-packs1               13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-raw-half-x           13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-shared-unpack        13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-shared-x-simple      13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m3-tune                 13b14b1 metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+  project24-m4-k2-rawhalf           c15b467 metal: unroll Q6 M4 qmv K loop by 2
+  project24-m4-k2-unroll            c15b467 metal: unroll Q6 M4 qmv K loop by 2
+  project24-m4-k4                   ae2676b metal: unroll Q6 M4 qmv K loop by 4
+  project24-m4-k4-explicit          ae2676b metal: unroll Q6 M4 qmv K loop by 4
+  project24-m4-k4-qdot2x2           58c2497 Optimize FAST_M4 Q6 qdot across four vectors
+  project24-m4-k4-qdot4             58c2497 Optimize FAST_M4 Q6 qdot across four vectors
+  project24-m4-k4-qdot4-collapse    7dad76c Collapse Q6 packed fields in FAST_M4 qdot
+  project24-m4-k4-qdot4-rawx        679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+  project24-m4-k4-qdot4-rawx-4x1    679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+  project24-m4-k4-qdot4-rawx-4x4    679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+  project24-m4-k4-qdot4-rawx-8x1    679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+  project24-m4-k4-qdot4-rawx-8x2    679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+  project24-m4-k4-qdot4-rawx-float4 679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+* project24-m4-k4-qdot4-rawx-halfx  679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+  project24-m4-k4-qdot4-rawx-shifts 679d196 Normalize Q6 coefficients and stage raw activations in FAST_M4
+  project24-m4-k4-qdot4-shift256    194a432 Shift Q6 split-field scale into coefficient for FAST_M4
+  project24-m4-k4-rawhalf           ae2676b metal: unroll Q6 M4 qmv K loop by 4
+  project24-mtp-profile             ae2676b metal: unroll Q6 M4 qmv K loop by 4
+  project24-q6-m4-4x2               95767f5 metal: add Q6 M4 4x2 qmv specialization
+  project24-q6-m5-4x2               95767f5 metal: add Q6 M4 4x2 qmv specialization

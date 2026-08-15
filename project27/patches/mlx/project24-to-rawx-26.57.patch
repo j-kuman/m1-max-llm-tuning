@@ -1,0 +1,412 @@
+diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
+index 2b9383d..ef2616d 100644
+--- a/mlx/backend/metal/kernels/quantized.h
++++ b/mlx/backend/metal/kernels/quantized.h
+@@ -861,8 +861,8 @@ METAL_FUNC void qmv_fast_m3_impl(
+ 
+   static_assert(bits == 6, "qmv_fast_m3 is Q6-only");
+ 
+-  constexpr int num_simdgroups = 2;
+-  constexpr int results_per_simdgroup = 4;
++  constexpr int num_simdgroups = 4;
++  constexpr int results_per_simdgroup = 2;
+   constexpr int packs_per_thread = 2;
+   constexpr int pack_factor = 4;
+   constexpr int bytes_per_pack = 3;
+@@ -976,6 +976,290 @@ METAL_FUNC void qmv_fast_m3_impl(
+   }
+ }
+ 
++
++// FAST_M4 experiment: evaluate one Q6 weight field at a time across
++// all four vectors. This shares mask/decode work while keeping only
++// one decoded weight scalar live at once.
++
++// FAST_M4 exact candidate: stage raw Q6 activations in FP32.
++//
++// Unlike load_vector<..., 6>, do not pre-scale elements by
++// /64, /16, /4. Those exact power-of-two factors are instead
++// folded into the integer Q6 coefficient pieces in the qdot.
++//
++// Preserve the original raw activation sum used for affine bias.
++template <typename T, typename U, int values_per_thread>
++inline U load_vector_q6_raw_fp32(
++    const device T* x,
++    thread U* x_thread) {
++
++  static_assert(values_per_thread == 8, "Q6 RAWX loader expects 8 values");
++
++  U sum = 0;
++
++  for (int i = 0; i < values_per_thread; i += 4) {
++    // Deliberately preserve the same sum expression/order as
++    // load_vector<..., 6>.
++    sum += x[i] + x[i + 1] + x[i + 2] + x[i + 3];
++
++    x_thread[i]     = x[i];
++    x_thread[i + 1] = x[i + 1];
++    x_thread[i + 2] = x[i + 2];
++    x_thread[i + 3] = x[i + 3];
++  }
++
++  return sum;
++}
++
++template <typename U>
++inline void qdot_q6_8_m4_shared(
++    uint8_t w0,
++    uint8_t w1,
++    uint8_t w2,
++    uint8_t w3,
++    uint8_t w4,
++    uint8_t w5,
++    const thread U* x0,
++    const thread U* x1,
++    const thread U* x2,
++    const thread U* x3,
++    U scale,
++    U bias,
++    U sum0,
++    U sum1,
++    U sum2,
++    U sum3,
++    thread U& out0,
++    thread U& out1,
++    thread U& out2,
++    thread U& out3) {
++
++  U a0 = 0;
++  U a1 = 0;
++  U a2 = 0;
++  U a3 = 0;
++  U q;
++
++  q = (w0 & 0x3f);
++  a0 += q * x0[0];
++  a1 += q * x1[0];
++  a2 += q * x2[0];
++  a3 += q * x3[0];
++
++  q = static_cast<U>((w0 & 0xc0) >> 6);
++  a0 += q * x0[1];
++  a1 += q * x1[1];
++  a2 += q * x2[1];
++  a3 += q * x3[1];
++
++  q = static_cast<U>((w1 & 0x0f) << 2);
++  a0 += q * x0[1];
++  a1 += q * x1[1];
++  a2 += q * x2[1];
++  a3 += q * x3[1];
++
++  q = static_cast<U>((w1 & 0xf0) >> 4);
++  a0 += q * x0[2];
++  a1 += q * x1[2];
++  a2 += q * x2[2];
++  a3 += q * x3[2];
++
++  q = static_cast<U>((w2 & 0x03) << 4);
++  a0 += q * x0[2];
++  a1 += q * x1[2];
++  a2 += q * x2[2];
++  a3 += q * x3[2];
++
++  q = static_cast<U>((w2 & 0xfc) >> 2);
++  a0 += q * x0[3];
++  a1 += q * x1[3];
++  a2 += q * x2[3];
++  a3 += q * x3[3];
++
++  q = (w3 & 0x3f);
++  a0 += q * x0[4];
++  a1 += q * x1[4];
++  a2 += q * x2[4];
++  a3 += q * x3[4];
++
++  q = static_cast<U>((w3 & 0xc0) >> 6);
++  a0 += q * x0[5];
++  a1 += q * x1[5];
++  a2 += q * x2[5];
++  a3 += q * x3[5];
++
++  q = static_cast<U>((w4 & 0x0f) << 2);
++  a0 += q * x0[5];
++  a1 += q * x1[5];
++  a2 += q * x2[5];
++  a3 += q * x3[5];
++
++  q = static_cast<U>((w4 & 0xf0) >> 4);
++  a0 += q * x0[6];
++  a1 += q * x1[6];
++  a2 += q * x2[6];
++  a3 += q * x3[6];
++
++  q = static_cast<U>((w5 & 0x03) << 4);
++  a0 += q * x0[6];
++  a1 += q * x1[6];
++  a2 += q * x2[6];
++  a3 += q * x3[6];
++
++  q = static_cast<U>((w5 & 0xfc) >> 2);
++  a0 += q * x0[7];
++  a1 += q * x1[7];
++  a2 += q * x2[7];
++  a3 += q * x3[7];
++
++  out0 += scale * a0 + sum0 * bias;
++  out1 += scale * a1 + sum1 * bias;
++  out2 += scale * a2 + sum2 * bias;
++  out3 += scale * a3 + sum3 * bias;
++}
++
++template <typename T, int group_size, int bits>
++METAL_FUNC void qmv_fast_m4_impl(
++    const device uint32_t* w,
++    const device T* scales,
++    const device T* biases,
++    const device T* x,
++    device T* y,
++    const constant int& in_vec_size,
++    const constant int& out_vec_size,
++    uint3 tid [[threadgroup_position_in_grid]],
++    uint simd_gid [[simdgroup_index_in_threadgroup]],
++    uint simd_lid [[thread_index_in_simdgroup]]) {
++
++  static_assert(bits == 6, "qmv_fast_m4 is Q6-only");
++
++  constexpr int num_simdgroups = 4;
++  constexpr int results_per_simdgroup = 2;
++  constexpr int packs_per_thread = 2;
++  constexpr int pack_factor = 4;
++  constexpr int bytes_per_pack = 3;
++  constexpr int values_per_thread = 8;
++  constexpr int block_size = values_per_thread * SIMD_SIZE;
++  constexpr int scale_step_per_thread = group_size / values_per_thread;
++
++  typedef float U;
++
++  thread U x0_thread[values_per_thread];
++  thread U x1_thread[values_per_thread];
++  thread U x2_thread[values_per_thread];
++  thread U x3_thread[values_per_thread];
++
++  thread U result0[results_per_simdgroup] = {0};
++  thread U result1[results_per_simdgroup] = {0};
++  thread U result2[results_per_simdgroup] = {0};
++  thread U result3[results_per_simdgroup] = {0};
++
++  const int in_vec_size_w =
++      in_vec_size * bytes_per_pack / pack_factor;
++  const int in_vec_size_g =
++      in_vec_size / group_size;
++
++  const int out_row =
++      tid.y * (num_simdgroups * results_per_simdgroup) +
++      simd_gid * results_per_simdgroup;
++
++  const device uint8_t* ws =
++      (const device uint8_t*)w +
++      out_row * in_vec_size_w +
++      simd_lid * packs_per_thread * bytes_per_pack;
++
++  scales +=
++      out_row * in_vec_size_g +
++      simd_lid / scale_step_per_thread;
++
++  biases +=
++      out_row * in_vec_size_g +
++      simd_lid / scale_step_per_thread;
++
++  const device T* x0 =
++      x + simd_lid * values_per_thread;
++  const device T* x1 =
++      x0 + in_vec_size;
++  const device T* x2 =
++      x1 + in_vec_size;
++  const device T* x3 =
++      x2 + in_vec_size;
++
++  device T* y0 = y + out_row;
++  device T* y1 = y0 + out_vec_size;
++  device T* y2 = y1 + out_vec_size;
++  device T* y3 = y2 + out_vec_size;
++
++  // FAST_M4 K4 experiment: process four 256-value K blocks
++  // per outer iteration. Qwen3.8 target dimensions used here are
++  // multiples of 1024, so there is no tail in this workload.
++  for (int k = 0; k < in_vec_size; k += 4 * block_size) {
++    for (int u = 0; u < 4; ++u) {
++    U sum0 =
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x0, x0_thread);
++    U sum1 =
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x1, x1_thread);
++    U sum2 =
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x2, x2_thread);
++    U sum3 =
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x3, x3_thread);
++
++    for (int row = 0; row < results_per_simdgroup; row++) {
++      const device uint8_t* wl =
++          ws + row * in_vec_size_w;
++
++      const device T* sl =
++          scales + row * in_vec_size_g;
++      const device T* bl =
++          biases + row * in_vec_size_g;
++
++      U scale = sl[0];
++      U bias = bl[0];
++
++      // Load one packed Q6 chunk once, reuse it across all four vectors.
++      uint8_t w0 = wl[0];
++      uint8_t w1 = wl[1];
++      uint8_t w2 = wl[2];
++      uint8_t w3 = wl[3];
++      uint8_t w4 = wl[4];
++      uint8_t w5 = wl[5];
++
++      qdot_q6_8_m4_shared<U>(
++          w0, w1, w2, w3, w4, w5,
++          x0_thread, x1_thread, x2_thread, x3_thread,
++          scale, bias,
++          sum0, sum1, sum2, sum3,
++          result0[row], result1[row], result2[row], result3[row]);
++    }
++
++    ws += block_size * bytes_per_pack / pack_factor;
++    scales += block_size / group_size;
++    biases += block_size / group_size;
++
++    x0 += block_size;
++    x1 += block_size;
++    x2 += block_size;
++    x3 += block_size;
++    }
++  }
++
++  for (int row = 0; row < results_per_simdgroup; row++) {
++    result0[row] = simd_sum(result0[row]);
++    result1[row] = simd_sum(result1[row]);
++    result2[row] = simd_sum(result2[row]);
++    result3[row] = simd_sum(result3[row]);
++
++    if (simd_lid == 0) {
++      y0[row] = static_cast<T>(result0[row]);
++      y1[row] = static_cast<T>(result1[row]);
++      y2[row] = static_cast<T>(result2[row]);
++      y3[row] = static_cast<T>(result3[row]);
++    }
++  }
++}
++
++
++
+ template <typename T, int group_size, int bits>
+ METAL_FUNC void qmv_impl(
+     const device uint32_t* w,
+@@ -1840,6 +2124,40 @@ template <typename T, int group_size, int bits, bool batched>
+       simd_lid);
+ }
+ 
++template <typename T, int group_size, int bits, bool batched>
++[[kernel]] void affine_qmv_fast_m4(
++    const device uint32_t* w [[buffer(0)]],
++    const device T* scales [[buffer(1)]],
++    const device T* biases [[buffer(2)]],
++    const device T* x [[buffer(3)]],
++    device T* y [[buffer(4)]],
++    const constant int& in_vec_size [[buffer(5)]],
++    const constant int& out_vec_size [[buffer(6)]],
++    const constant int& x_batch_ndims [[buffer(7)]],
++    const constant int* x_shape [[buffer(8)]],
++    const constant int64_t* x_strides [[buffer(9)]],
++    const constant int& w_batch_ndims [[buffer(10)]],
++    const constant int* w_shape [[buffer(11)]],
++    const constant int64_t* w_strides [[buffer(12)]],
++    const constant int64_t* s_strides [[buffer(13)]],
++    const constant int64_t* b_strides [[buffer(14)]],
++    uint3 tid [[threadgroup_position_in_grid]],
++    uint simd_gid [[simdgroup_index_in_threadgroup]],
++    uint simd_lid [[thread_index_in_simdgroup]]) {
++
++  qmv_fast_m4_impl<T, group_size, bits>(
++      w,
++      scales,
++      biases,
++      x,
++      y,
++      in_vec_size,
++      out_vec_size,
++      tid,
++      simd_gid,
++      simd_lid);
++}
++
+ template <typename T, const int group_size, const int bits, bool batched>
+ [[kernel]] void affine_qmv(
+     const device uint32_t* w [[buffer(0)]],
+diff --git a/mlx/backend/metal/kernels/quantized.metal b/mlx/backend/metal/kernels/quantized.metal
+index 5e6cdfe..e90948a 100644
+--- a/mlx/backend/metal/kernels/quantized.metal
++++ b/mlx/backend/metal/kernels/quantized.metal
+@@ -183,4 +183,7 @@
+ instantiate_quantized_batched(
+     affine_qmv_fast_m3, float16_t, 64, 6, 0)
+ 
++instantiate_quantized_batched(
++    affine_qmv_fast_m4, float16_t, 64, 6, 0)
++
+ instantiate_quantized_all() // clang-format on
+diff --git a/mlx/backend/metal/quantized.cpp b/mlx/backend/metal/quantized.cpp
+index 132c586..73d97f6 100644
+--- a/mlx/backend/metal/quantized.cpp
++++ b/mlx/backend/metal/quantized.cpp
+@@ -252,8 +252,6 @@ void qmv(
+ 
+   int bn = 8;
+   int bk = 32;
+-  MTL::Size group_dims(bk, 2, 1);
+-
+   std::string kname;
+   kname.reserve(64);
+   std::string type_string = get_type_string(x.dtype());
+@@ -269,8 +267,22 @@ void qmv(
+       x.dtype() == float16 &&
+       fast;
+ 
++  bool fast_m4 =
++      std::getenv("MLX_QMV_FAST_M4") != nullptr &&
++      mode == "affine" &&
++      bits == 6 &&
++      group_size == 64 &&
++      M == 4 &&
++      B == 1 &&
++      x.dtype() == float16 &&
++      fast;
++
++  bool fast_small_m = fast_m3 || fast_m4;
++
++  MTL::Size group_dims(bk, fast_small_m ? 4 : 2, 1);
++
+   MTL::Size grid_dims(
+-      fast_m3 ? 1 : M,
++      fast_small_m ? 1 : M,
+       (N + bn - 1) / bn,
+       B);
+ 
+@@ -278,6 +290,7 @@ void qmv(
+       kname,
+       mode +
+           (fast_m3 ? "_qmv_fast_m3_" :
++           fast_m4 ? "_qmv_fast_m4_" :
+            fast ? "_qmv_fast_" : "_qmv_"),
+       type_string,
+       "_gs_",
+@@ -289,6 +302,7 @@ void qmv(
+       d,
+       kname,
+       (fast_m3 ? "qmv_fast_m3" :
++       fast_m4 ? "qmv_fast_m4" :
+        fast ? "qmv_fast" : "qmv"),
+       mode,
+       type_string,

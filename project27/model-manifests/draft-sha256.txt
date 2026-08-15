@@ -1,0 +1,3 @@
+DRAFT=/Users/skylinej17/models/Qwen3.8-27B-MTP-Q3MLP-Q6ATTN-FP16-27.305
+dd458a3174355b1673ccee3c9980f62692f89ede6bf7841a986762ca4b3c7336  /Users/skylinej17/models/Qwen3.8-27B-MTP-Q3MLP-Q6ATTN-FP16-27.305/config.json
+204ba1fa67abdf1b1f167afbb9f6a9279b9d73b71c677fde5452ffa1af7fd77f  /Users/skylinej17/models/Qwen3.8-27B-MTP-Q3MLP-Q6ATTN-FP16-27.305/model.safetensors

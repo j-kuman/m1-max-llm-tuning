@@ -1,0 +1,14 @@
+v0.32.0
+m1-q6-m3-dspark-14.3
+project24-q6-m3-4x2-22.0
+project24-q6-m4-4x2-22.7
+project24-q6-m4-k2-23.4
+project24-q6-m4-k4-23.6
+project24-q6-m4-k4-qdot4-23.9
+project24-q6-m4-k4-qdot4-collapse-26.6-nonexact
+project24-q6-m4-k4-qdot4-collapse-26.8-nonexact
+project24-q6-m4-k4-qdot4-shift256-exact-24.9
+project24-q6-m4-k4-qdot4-rawx-exact-25.1
+project24-q6-m4-k4-qdot4-rawx-exact-26.5
+project24-q6-m4-k4-qdot4-rawx-exact-26.57
+project27-q38-27.305-exact

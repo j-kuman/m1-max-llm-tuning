@@ -1,0 +1,40 @@
+diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
+index ef2616d..ce3a98d 100644
+--- a/mlx/backend/metal/kernels/quantized.h
++++ b/mlx/backend/metal/kernels/quantized.h
+@@ -1133,7 +1133,9 @@ METAL_FUNC void qmv_fast_m4_impl(
+ 
+   static_assert(bits == 6, "qmv_fast_m4 is Q6-only");
+ 
+-  constexpr int num_simdgroups = 4;
++  // RAWX geometry experiment:
++  // 8 SIMDgroups x 2 rows = 16 output rows/TG.
++  constexpr int num_simdgroups = 8;
+   constexpr int results_per_simdgroup = 2;
+   constexpr int packs_per_thread = 2;
+   constexpr int pack_factor = 4;
+diff --git a/mlx/backend/metal/quantized.cpp b/mlx/backend/metal/quantized.cpp
+index 73d97f6..b77f0c2 100644
+--- a/mlx/backend/metal/quantized.cpp
++++ b/mlx/backend/metal/quantized.cpp
+@@ -279,11 +279,18 @@ void qmv(
+ 
+   bool fast_small_m = fast_m3 || fast_m4;
+ 
+-  MTL::Size group_dims(bk, fast_small_m ? 4 : 2, 1);
++  int qmv_num_simdgroups =
++      fast_m4 ? 8 :
++      fast_m3 ? 4 :
++      2;
++
++  MTL::Size group_dims(bk, qmv_num_simdgroups, 1);
++
++  int qmv_output_rows_per_tg = fast_m4 ? 16 : bn;
+ 
+   MTL::Size grid_dims(
+       fast_small_m ? 1 : M,
+-      (N + bn - 1) / bn,
++      (N + qmv_output_rows_per_tg - 1) / qmv_output_rows_per_tg,
+       B);
+ 
+   concatenate(

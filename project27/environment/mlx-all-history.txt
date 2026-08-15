@@ -1,0 +1,11 @@
+* 679d196 (HEAD -> project24-m4-k4-qdot4-rawx-halfx, tag: project27-q38-27.305-exact, tag: project24-q6-m4-k4-qdot4-rawx-exact-26.57, tag: project24-q6-m4-k4-qdot4-rawx-exact-26.5, tag: project24-q6-m4-k4-qdot4-rawx-exact-25.1, project24-m4-k4-qdot4-rawx-shifts, project24-m4-k4-qdot4-rawx-float4, project24-m4-k4-qdot4-rawx-8x2, project24-m4-k4-qdot4-rawx-8x1, project24-m4-k4-qdot4-rawx-4x4, project24-m4-k4-qdot4-rawx-4x1, project24-m4-k4-qdot4-rawx) Normalize Q6 coefficients and stage raw activations in FAST_M4
+* 194a432 (tag: project24-q6-m4-k4-qdot4-shift256-exact-24.9, project24-m4-k4-qdot4-shift256) Shift Q6 split-field scale into coefficient for FAST_M4
+| * 7dad76c (tag: project24-q6-m4-k4-qdot4-collapse-26.8-nonexact, tag: project24-q6-m4-k4-qdot4-collapse-26.6-nonexact, project24-m4-k4-qdot4-collapse) Collapse Q6 packed fields in FAST_M4 qdot
+|/  
+* 58c2497 (tag: project24-q6-m4-k4-qdot4-23.9, project24-m4-k4-qdot4, project24-m4-k4-qdot2x2) Optimize FAST_M4 Q6 qdot across four vectors
+* ae2676b (tag: project24-q6-m4-k4-23.6, project24-mtp-profile, project24-m4-k4-rawhalf, project24-m4-k4-explicit, project24-m4-k4) metal: unroll Q6 M4 qmv K loop by 4
+* c15b467 (tag: project24-q6-m4-k2-23.4, project24-m4-k2-unroll, project24-m4-k2-rawhalf) metal: unroll Q6 M4 qmv K loop by 2
+* 95767f5 (tag: project24-q6-m4-4x2-22.7, project24-q6-m5-4x2, project24-q6-m4-4x2) metal: add Q6 M4 4x2 qmv specialization
+* 13b14b1 (tag: project24-q6-m3-4x2-22.0, project24-m3-tune, project24-m3-shared-x-simple, project24-m3-shared-unpack, project24-m3-raw-half-x, project24-m3-packs1, project24-m3-meta-broadcast, project24-m3-5x2, project24-m3-4x4, project24-m3-4x1, project24-m3-3x2) metal: tune Q6 M3 qmv to 4 simdgroups x 2 rows
+* 8b6803c (tag: m1-q6-m3-dspark-14.3, m1-affine-qmv-wide) metal: share Q6 weights across M=3 qmv
+* 7a1d4f5 (grafted, tag: v0.32.0) Fix conv2 gradients in grouped strided case on Metal (#3800)

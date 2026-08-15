@@ -1,0 +1,9 @@
+HEAD=679d196142ab25faac5fda6d7d7f6039cb66cee4
+DESCRIBE=project27-q38-27.305-exact
+BRANCH=project24-m4-k4-qdot4-rawx-halfx
+
+--- STATUS ---
+
+--- REMOTES ---
+origin	https://github.com/ml-explore/mlx.git (fetch)
+origin	https://github.com/ml-explore/mlx.git (push)

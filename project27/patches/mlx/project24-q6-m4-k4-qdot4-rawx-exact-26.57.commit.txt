@@ -1,0 +1,142 @@
+commit 679d196142ab25faac5fda6d7d7f6039cb66cee4
+Author:     Jeff Ku <jbc15950@gmail.com>
+AuthorDate: Sat Aug 15 02:15:39 2026 -0400
+Commit:     Jeff Ku <jbc15950@gmail.com>
+CommitDate: Sat Aug 15 02:15:39 2026 -0400
+
+    Normalize Q6 coefficients and stage raw activations in FAST_M4
+
+diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
+index 64e210b..ef2616d 100644
+--- a/mlx/backend/metal/kernels/quantized.h
++++ b/mlx/backend/metal/kernels/quantized.h
+@@ -980,6 +980,37 @@ METAL_FUNC void qmv_fast_m3_impl(
+ // FAST_M4 experiment: evaluate one Q6 weight field at a time across
+ // all four vectors. This shares mask/decode work while keeping only
+ // one decoded weight scalar live at once.
++
++// FAST_M4 exact candidate: stage raw Q6 activations in FP32.
++//
++// Unlike load_vector<..., 6>, do not pre-scale elements by
++// /64, /16, /4. Those exact power-of-two factors are instead
++// folded into the integer Q6 coefficient pieces in the qdot.
++//
++// Preserve the original raw activation sum used for affine bias.
++template <typename T, typename U, int values_per_thread>
++inline U load_vector_q6_raw_fp32(
++    const device T* x,
++    thread U* x_thread) {
++
++  static_assert(values_per_thread == 8, "Q6 RAWX loader expects 8 values");
++
++  U sum = 0;
++
++  for (int i = 0; i < values_per_thread; i += 4) {
++    // Deliberately preserve the same sum expression/order as
++    // load_vector<..., 6>.
++    sum += x[i] + x[i + 1] + x[i + 2] + x[i + 3];
++
++    x_thread[i]     = x[i];
++    x_thread[i + 1] = x[i + 1];
++    x_thread[i + 2] = x[i + 2];
++    x_thread[i + 3] = x[i + 3];
++  }
++
++  return sum;
++}
++
+ template <typename U>
+ inline void qdot_q6_8_m4_shared(
+     uint8_t w0,
+@@ -1015,31 +1046,31 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[0];
+   a3 += q * x3[0];
+ 
+-  q = (w0 & 0xc0);
++  q = static_cast<U>((w0 & 0xc0) >> 6);
+   a0 += q * x0[1];
+   a1 += q * x1[1];
+   a2 += q * x2[1];
+   a3 += q * x3[1];
+ 
+-  q = static_cast<U>((w1 & 0x0f) << 8);
++  q = static_cast<U>((w1 & 0x0f) << 2);
+   a0 += q * x0[1];
+   a1 += q * x1[1];
+   a2 += q * x2[1];
+   a3 += q * x3[1];
+ 
+-  q = (w1 & 0xf0);
++  q = static_cast<U>((w1 & 0xf0) >> 4);
+   a0 += q * x0[2];
+   a1 += q * x1[2];
+   a2 += q * x2[2];
+   a3 += q * x3[2];
+ 
+-  q = static_cast<U>((w2 & 0x03) << 8);
++  q = static_cast<U>((w2 & 0x03) << 4);
+   a0 += q * x0[2];
+   a1 += q * x1[2];
+   a2 += q * x2[2];
+   a3 += q * x3[2];
+ 
+-  q = (w2 & 0xfc);
++  q = static_cast<U>((w2 & 0xfc) >> 2);
+   a0 += q * x0[3];
+   a1 += q * x1[3];
+   a2 += q * x2[3];
+@@ -1051,31 +1082,31 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[4];
+   a3 += q * x3[4];
+ 
+-  q = (w3 & 0xc0);
++  q = static_cast<U>((w3 & 0xc0) >> 6);
+   a0 += q * x0[5];
+   a1 += q * x1[5];
+   a2 += q * x2[5];
+   a3 += q * x3[5];
+ 
+-  q = static_cast<U>((w4 & 0x0f) << 8);
++  q = static_cast<U>((w4 & 0x0f) << 2);
+   a0 += q * x0[5];
+   a1 += q * x1[5];
+   a2 += q * x2[5];
+   a3 += q * x3[5];
+ 
+-  q = (w4 & 0xf0);
++  q = static_cast<U>((w4 & 0xf0) >> 4);
+   a0 += q * x0[6];
+   a1 += q * x1[6];
+   a2 += q * x2[6];
+   a3 += q * x3[6];
+ 
+-  q = static_cast<U>((w5 & 0x03) << 8);
++  q = static_cast<U>((w5 & 0x03) << 4);
+   a0 += q * x0[6];
+   a1 += q * x1[6];
+   a2 += q * x2[6];
+   a3 += q * x3[6];
+ 
+-  q = (w5 & 0xfc);
++  q = static_cast<U>((w5 & 0xfc) >> 2);
+   a0 += q * x0[7];
+   a1 += q * x1[7];
+   a2 += q * x2[7];
+@@ -1165,13 +1196,13 @@ METAL_FUNC void qmv_fast_m4_impl(
+   for (int k = 0; k < in_vec_size; k += 4 * block_size) {
+     for (int u = 0; u < 4; ++u) {
+     U sum0 =
+-        load_vector<T, U, values_per_thread, 6>(x0, x0_thread);
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x0, x0_thread);
+     U sum1 =
+-        load_vector<T, U, values_per_thread, 6>(x1, x1_thread);
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x1, x1_thread);
+     U sum2 =
+-        load_vector<T, U, values_per_thread, 6>(x2, x2_thread);
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x2, x2_thread);
+     U sum3 =
+-        load_vector<T, U, values_per_thread, 6>(x3, x3_thread);
++        load_vector_q6_raw_fp32<T, U, values_per_thread>(x3, x3_thread);
+ 
+     for (int row = 0; row < results_per_simdgroup; row++) {
+       const device uint8_t* wl =

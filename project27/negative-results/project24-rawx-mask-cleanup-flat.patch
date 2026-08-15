@@ -1,0 +1,58 @@
+diff --git a/mlx/backend/metal/kernels/quantized.h b/mlx/backend/metal/kernels/quantized.h
+index ef2616d..fd7aa72 100644
+--- a/mlx/backend/metal/kernels/quantized.h
++++ b/mlx/backend/metal/kernels/quantized.h
+@@ -1046,7 +1046,7 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[0];
+   a3 += q * x3[0];
+ 
+-  q = static_cast<U>((w0 & 0xc0) >> 6);
++  q = static_cast<U>(w0 >> 6);
+   a0 += q * x0[1];
+   a1 += q * x1[1];
+   a2 += q * x2[1];
+@@ -1058,7 +1058,7 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[1];
+   a3 += q * x3[1];
+ 
+-  q = static_cast<U>((w1 & 0xf0) >> 4);
++  q = static_cast<U>(w1 >> 4);
+   a0 += q * x0[2];
+   a1 += q * x1[2];
+   a2 += q * x2[2];
+@@ -1070,7 +1070,7 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[2];
+   a3 += q * x3[2];
+ 
+-  q = static_cast<U>((w2 & 0xfc) >> 2);
++  q = static_cast<U>(w2 >> 2);
+   a0 += q * x0[3];
+   a1 += q * x1[3];
+   a2 += q * x2[3];
+@@ -1082,7 +1082,7 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[4];
+   a3 += q * x3[4];
+ 
+-  q = static_cast<U>((w3 & 0xc0) >> 6);
++  q = static_cast<U>(w3 >> 6);
+   a0 += q * x0[5];
+   a1 += q * x1[5];
+   a2 += q * x2[5];
+@@ -1094,7 +1094,7 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[5];
+   a3 += q * x3[5];
+ 
+-  q = static_cast<U>((w4 & 0xf0) >> 4);
++  q = static_cast<U>(w4 >> 4);
+   a0 += q * x0[6];
+   a1 += q * x1[6];
+   a2 += q * x2[6];
+@@ -1106,7 +1106,7 @@ inline void qdot_q6_8_m4_shared(
+   a2 += q * x2[6];
+   a3 += q * x3[6];
+ 
+-  q = static_cast<U>((w5 & 0xfc) >> 2);
++  q = static_cast<U>(w5 >> 2);
+   a0 += q * x0[7];
+   a1 += q * x1[7];
+   a2 += q * x2[7];
