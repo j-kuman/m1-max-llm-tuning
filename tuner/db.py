@@ -32,6 +32,25 @@ ON runs(campaign, candidate);
 
 CREATE INDEX IF NOT EXISTS idx_runs_stage_prompt
 ON runs(stage, prompt_id);
+
+CREATE TABLE IF NOT EXISTS microbench_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    campaign TEXT NOT NULL,
+    candidate TEXT NOT NULL,
+    component TEXT NOT NULL,
+    run_index INTEGER NOT NULL,
+    metric_name TEXT NOT NULL,
+    metric_value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    command_json TEXT NOT NULL,
+    stdout_sha256 TEXT NOT NULL,
+    notes TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_microbench_campaign_candidate
+ON microbench_runs(campaign, candidate, component);
 """
 
 
@@ -63,6 +82,21 @@ def insert_run(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     placeholders = ",".join("?" for _ in cols)
     conn.execute(
         f"INSERT INTO runs ({','.join(cols)}) VALUES ({placeholders})",
+        values,
+    )
+    conn.commit()
+
+
+def insert_microbench(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    cols = [
+        "campaign", "candidate", "component", "run_index", "metric_name",
+        "metric_value", "unit", "direction", "command_json", "stdout_sha256",
+        "notes",
+    ]
+    values = [row.get(c) for c in cols]
+    placeholders = ",".join("?" for _ in cols)
+    conn.execute(
+        f"INSERT INTO microbench_runs ({','.join(cols)}) VALUES ({placeholders})",
         values,
     )
     conn.commit()
