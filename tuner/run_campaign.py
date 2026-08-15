@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
 import os
 import subprocess
@@ -118,6 +119,31 @@ def main() -> None:
     )
     assert canonical_reference is not None
 
+    # Correctness references are frozen by token count/hash, while screening TPS
+    # must be normalized to the same tuner harness. Historical production TPS can
+    # differ materially because of protocol or machine-state changes.
+    canonical_reference_stats = load_screen_stats(
+        connect(db_path), name, reference_candidate, args.prompt_id, "reference"
+    )
+    if canonical_reference_stats is None:
+        raise RuntimeError("canonical reference exists but has no valid performance/round telemetry")
+    if canonical_reference_stats.min_rounds != canonical_reference_stats.max_rounds:
+        raise RuntimeError("canonical champion reference has nondeterministic round telemetry")
+
+    screen_cfg = deepcopy(cfg)
+    screen_cfg["champion"] = dict(cfg["champion"])
+    screen_cfg["champion"]["mean_tps"] = canonical_reference_stats.mean_tps
+    screen_cfg["champion"]["rounds"] = canonical_reference_stats.min_rounds
+
+    historical_tps = float(cfg["champion"]["mean_tps"])
+    drift = canonical_reference_stats.mean_tps / historical_tps - 1.0
+    print(
+        "screen control baseline:",
+        f"{canonical_reference_stats.mean_tps:.3f} tok/s,",
+        f"{canonical_reference_stats.min_rounds} rounds",
+        f"(historical production {historical_tps:.3f}, drift {drift:+.2%})",
+    )
+
     need_dev = args.run_dev or args.run_production
     if need_dev:
         ensure_dev_reference(
@@ -179,7 +205,7 @@ def main() -> None:
         stats = load_screen_stats(connect(db_path), name, cid, args.prompt_id, "screen")
         assert stats is not None
         decision, reason = classify(
-            cfg,
+            screen_cfg,
             stats,
             reference_tokens=canonical_reference.tokens,
             reference_hash=canonical_reference.text_sha256,
