@@ -11,12 +11,39 @@ import mlx.core as mx
 from .spec import expand_path, load_campaign, load_candidate
 
 
+BUILD_VERSION = 2
+
+
 def sha256_file(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
         while chunk := f.read(chunk_size):
             h.update(chunk)
     return h.hexdigest()
+
+
+def normalized_qspec(qspec: dict) -> tuple[int, int, str]:
+    return (
+        int(qspec["bits"]),
+        int(qspec["group_size"]),
+        str(qspec.get("mode", "affine")),
+    )
+
+
+def modules_to_rebuild(campaign: dict, candidate: dict) -> list[str]:
+    """Return only modules whose quantization spec differs from the champion.
+
+    Search candidates are defined as coordinate mutations around the frozen
+    champion. Unchanged quantized tensors must therefore be copied byte-for-byte
+    from the champion sidecar rather than being re-quantized from source BF16.
+    """
+    champion_modules = campaign["champion"]["modules"]
+    changed: list[str] = []
+    for module, qspec in candidate["modules"].items():
+        base_qspec = champion_modules.get(module)
+        if base_qspec is None or normalized_qspec(qspec) != normalized_qspec(base_qspec):
+            changed.append(module)
+    return changed
 
 
 def build_candidate(campaign: dict, candidate: dict, output: Path, force: bool = False) -> Path:
@@ -36,13 +63,23 @@ def build_candidate(campaign: dict, candidate: dict, output: Path, force: bool =
     print("Loading base drafter:", base_draft)
     base_weights = mx.load(str(base_draft / "model.safetensors"))
 
+    modules = candidate["modules"]
+    rebuilt_modules = modules_to_rebuild(campaign, candidate)
+    preserved_modules = [m for m in modules if m not in rebuilt_modules]
+
+    if not rebuilt_modules:
+        raise RuntimeError("candidate does not differ from champion quantization map")
+
+    print("Preserving champion quantized tensors for:", ", ".join(preserved_modules))
+    print("Rebuilding from pristine BF16:", ", ".join(rebuilt_modules))
+
     print("Loading pristine MTP shard:", source_shard)
     source_all = mx.load(str(source_shard))
 
     out = dict(base_weights)
-    modules = candidate["modules"]
 
-    for module, qspec in modules.items():
+    for module in rebuilt_modules:
+        qspec = modules[module]
         bits = int(qspec["bits"])
         group = int(qspec["group_size"])
         mode = qspec.get("mode", "affine")
@@ -93,10 +130,13 @@ def build_candidate(campaign: dict, candidate: dict, output: Path, force: bool =
     (output / "config.json").write_text(json.dumps(cfg, indent=2) + "\n")
 
     manifest = {
+        "build_version": BUILD_VERSION,
         "candidate": candidate,
         "campaign": c["name"],
         "base_draft": str(base_draft),
         "pristine_mtp_shard": str(source_shard),
+        "rebuilt_modules": rebuilt_modules,
+        "preserved_modules": preserved_modules,
         "model_sha256": sha256_file(model_path),
         "config_sha256": sha256_file(output / "config.json"),
     }
@@ -109,7 +149,7 @@ def build_candidate(campaign: dict, candidate: dict, output: Path, force: bool =
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Build a mixed-precision MTP candidate from pristine BF16 tensors.")
+    ap = argparse.ArgumentParser(description="Build a mixed-precision MTP candidate while preserving unchanged champion tensors exactly.")
     ap.add_argument("--campaign", required=True)
     ap.add_argument("--candidate", required=True)
     ap.add_argument("--output")
