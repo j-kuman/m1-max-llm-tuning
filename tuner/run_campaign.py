@@ -9,6 +9,7 @@ import sys
 import time
 from pathlib import Path
 
+from .build import BUILD_VERSION
 from .db import connect
 from .gates import champion_reference_id, load_reference
 from .promote import classify, evaluate_dev_gate, load_screen_stats
@@ -29,6 +30,18 @@ def campaign_env(cfg: dict) -> dict[str, str]:
     for key in env_cfg.get("unset", []):
         env.pop(str(key), None)
     return env
+
+
+def build_is_current(draft_dir: Path) -> bool:
+    """Return True only for a completed artifact from the current builder schema."""
+    manifest_path = draft_dir / "autotune-manifest.json"
+    if not manifest_path.exists():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        return int(manifest.get("build_version", 0)) >= BUILD_VERSION
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return False
 
 
 def ensure_canonical_reference(
@@ -248,14 +261,22 @@ def main() -> None:
 
         print(f"\n{'=' * 72}\n[{index}/{len(neighbors)}] {cid} mutation={cand['mutation']}\n{'=' * 72}")
 
-        if not (draft_dir / "autotune-manifest.json").exists():
-            run([
+        manifest_path = draft_dir / "autotune-manifest.json"
+        if not build_is_current(draft_dir):
+            build_cmd = [
                 sys.executable, "-m", "tuner.build",
                 "--campaign", args.campaign,
                 "--candidate", str(cand_file),
-            ], env)
+            ]
+            if manifest_path.exists():
+                print(
+                    f"stale candidate build detected (builder < v{BUILD_VERSION}); "
+                    "rebuilding from frozen champion"
+                )
+                build_cmd.append("--force")
+            run(build_cmd, env)
         else:
-            print("build exists; reusing", draft_dir)
+            print(f"current builder v{BUILD_VERSION} artifact exists; reusing", draft_dir)
 
         run([
             sys.executable, "-m", "tuner.validate",
