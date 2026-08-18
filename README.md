@@ -6,13 +6,15 @@ Performance engineering notes, benchmark records, source patches, benchmark harn
 
 The original Project27 milestone remains preserved at **27.305 tok/s sustained mean** with Q3 MLP + Q6 attention MTP and 139 verification rounds. That historical state is documented in [`PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md`](PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md).
 
-The current certified experimental line has moved substantially beyond Project27. The latest champion is **P44B1**, measured in a same-process alternating 10-pair benchmark:
+The current certified experimental line has moved substantially beyond Project27. The latest champion is **P44B2**, which replaces the P44B1 Q5/G64 approximate search head with a lower-bandwidth **Q4/G32** search head while keeping the exact top-4 -> Q6/G32 jury architecture unchanged.
 
-- **28.953139 tok/s mean** for P44B1 Q5/G64
-- **28.824832 tok/s mean** for the certified P43C Q5/G32 control
-- **+0.4452% mean paired speedup**
-- **+0.5223% median paired speedup**
-- **9/10 pair wins**
+Direct same-process alternating 10-pair benchmark:
+
+- **29.044437 tok/s mean** for P44B2 Q4/G32
+- **28.930412 tok/s mean** for the certified P44B1 Q5/G64 control in the same session
+- **+0.3942% mean paired speedup**
+- **+0.4231% median paired speedup**
+- **10/10 pair wins**
 - 138 speculative verification rounds on every measured run
 - exact deterministic text and exact draft/accept trajectory on every run
 - 414 exact Q6 jury calls per canonical 512-token generation
@@ -25,16 +27,24 @@ trajectory hash: f7801569fbdd
 rounds:          138
 ```
 
-P44B1 also passed the full distributional robustness battery:
+P44B2 also passed the full distributional robustness battery:
 
 - 30 prompt/context cases
 - five prompt families: code, reasoning, prose, structured, dialogue
 - context targets from 64 through 16,384 tokens
 - **3,886 real MTP head decisions**
-- Q6/G32 winner present in Q5/G64 top-4: **3886/3886**
+- Q6/G32 winner present in Q4/G32 top-4: **3886/3886**
 - exact top-4 -> Q6/G32 jury decision: **3886/3886**
 - failures: **0**
-- maximum observed Q6-winner rank under Q5/G64: **3**
+- maximum observed Q6-winner rank under Q4/G32: **3**
+
+Observed Q6-winner rank distribution under the Q4/G32 search head:
+
+```text
+rank1: 3800
+rank2:   81
+rank3:    5
+```
 
 Current post-Project27 stack:
 
@@ -42,12 +52,12 @@ Current post-Project27 stack:
 - fixed-shape / compiled target-verifier work retained from the P34-P36 line
 - native Qwen MTP, block size 4 (three actual drafted tokens)
 - exact Q6/G32 draft-side target-head oracle/jury
-- Q5/G64 full-vocabulary search head
+- **Q4/G32 full-vocabulary approximate search head**
 - deterministic hierarchical Metal top-4 reducer, 64 groups x 256 threads
 - exact Q6/G32 x4 gathered jury with full-vocabulary tie semantics
 - Q8 affine group-64 target lm_head with fused multi-token quantized argmax on the verifier path
 
-The continuation from the original Project27 milestone through P44B1 is documented in [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md).
+The continuation from the original Project27 milestone through the current P44 line is documented in [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md). The exact P44B2 certification record is preserved in [`post-project27/P44B2_CERTIFICATION.md`](post-project27/P44B2_CERTIFICATION.md).
 
 ## Autotuner
 
@@ -58,7 +68,8 @@ The first campaign is [`campaigns/qwen38-q6.toml`](campaigns/qwen38-q6.toml). Th
 ## Tuning logs
 
 - [`PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md`](PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md) preserves the original tuning campaign through the 27.305 tok/s Project27 milestone.
-- [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md) records the later fixed-shape verifier, draft-head quantization, exact-jury, robustness, and bandwidth-optimization work through P44B1.
+- [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md) records the later fixed-shape verifier, draft-head quantization, exact-jury, robustness, and bandwidth-optimization work.
+- [`post-project27/P44B2_CERTIFICATION.md`](post-project27/P44B2_CERTIFICATION.md) records the 29 tok/s P44B2 milestone, including the full robustness result and direct paired benchmark.
 
 ## Actual implementation artifacts
 
@@ -68,4 +79,4 @@ The Project27 snapshot remains intentionally immutable as a historical milestone
 
 ## Scope
 
-Near-term work is now focused on the remaining draft-head bandwidth ceiling: Q4/G32 and Q4/G64 search heads with exact Q6/G32 shortlist jury recovery, plus continued robustness-first optimization of the existing MTP architecture. Larger architecture experiments remain separate challengers and do not replace the frozen champion unless they beat it under the same benchmark discipline.
+P44B2 establishes the first certified **29 tok/s-class** configuration on this tuning line. Near-term work is focused on testing **P44B3 Q4/G64** as the next search-head bandwidth step while preserving the same exact Q6/G32 top-4 jury. Larger architecture experiments remain separate challengers and do not replace the frozen champion unless they beat it under the same benchmark and correctness discipline.
