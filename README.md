@@ -57,7 +57,7 @@ Current post-Project27 stack:
 - exact Q6/G32 x4 gathered jury with full-vocabulary tie semantics
 - Q8 affine group-64 target lm_head with fused multi-token quantized argmax on the verifier path
 
-The continuation from the original Project27 milestone through the current P44 line is documented in [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md). The exact P44B2 certification record is preserved in [`post-project27/P44B2_CERTIFICATION.md`](post-project27/P44B2_CERTIFICATION.md).
+The detailed continuation from the original Project27 milestone through P44B1 is documented in [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md). The P44B2 29 tok/s milestone is preserved separately in [`post-project27/P44B2_CERTIFICATION.md`](post-project27/P44B2_CERTIFICATION.md) rather than rewriting the already-recorded P34-P44B1 history.
 
 ## Autotuner
 
@@ -68,7 +68,7 @@ The first campaign is [`campaigns/qwen38-q6.toml`](campaigns/qwen38-q6.toml). Th
 ## Tuning logs
 
 - [`PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md`](PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md) preserves the original tuning campaign through the 27.305 tok/s Project27 milestone.
-- [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md) records the later fixed-shape verifier, draft-head quantization, exact-jury, robustness, and bandwidth-optimization work.
+- [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md) records the later fixed-shape verifier, draft-head quantization, exact-jury, robustness, and bandwidth-optimization work through P44B1.
 - [`post-project27/P44B2_CERTIFICATION.md`](post-project27/P44B2_CERTIFICATION.md) records the 29 tok/s P44B2 milestone, including the full robustness result and direct paired benchmark.
 
 ## Actual implementation artifacts
