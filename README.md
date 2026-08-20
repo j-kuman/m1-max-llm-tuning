@@ -2,6 +2,8 @@
 
 Performance engineering notes, benchmark records, source patches, benchmark harnesses, environment snapshots, reproducible tuning experiments, and an emerging config-driven autotuner for modern local LLMs on Apple M1 Max hardware.
 
+> **Cold-start / new-chat handoff:** read [`CURRENT_STATUS.md`](CURRENT_STATUS.md) first. It records the certified controls, current local development state, closed P47-P50 experiments, benchmark discipline, and the exact next experiment.
+
 ## Current Qwen3.8-27B Q6 state
 
 The original Project27 milestone remains preserved at **27.305 tok/s sustained mean** with Q3 MLP + Q6 attention MTP and 139 verification rounds. That historical state is documented in [`PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md`](PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md).
@@ -120,12 +122,14 @@ The first campaign is [`campaigns/qwen38-q6.toml`](campaigns/qwen38-q6.toml). Th
 
 ## Tuning logs
 
+- [`CURRENT_STATUS.md`](CURRENT_STATUS.md) is the cold-start handoff and current resume point.
 - [`PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md`](PROJECT27_QWEN38_27B_M1_MAX_TUNING_LOG.md) preserves the original tuning campaign through the 27.305 tok/s Project27 milestone.
 - [`QWEN38_27B_POST_PROJECT27_TUNING_LOG.md`](QWEN38_27B_POST_PROJECT27_TUNING_LOG.md) records the later fixed-shape verifier, draft-head quantization, exact-jury, robustness, and bandwidth-optimization work through P44B1.
 - [`post-project27/P44B2_CERTIFICATION.md`](post-project27/P44B2_CERTIFICATION.md) records the first certified 29 tok/s-class P44B2 milestone.
 - [`post-project27/P44B3_CERTIFICATION.md`](post-project27/P44B3_CERTIFICATION.md) records the Q4/G64 29.20 tok/s milestone, including the full robustness result and direct paired benchmark.
 - [`post-project27/P45B2B_CERTIFICATION.md`](post-project27/P45B2B_CERTIFICATION.md) records the GPU-resident conditional-jury champion, including exact 3,886-state policy certification and two independent 10-pair promotion sessions.
 - [`post-project27/P46_D5_CHECKPOINT.md`](post-project27/P46_D5_CHECKPOINT.md) records the D5 width-5 campaign through native M5, the Q8 T5 2+2+1 verifier head, rejected CHUNK2/P37-8 paths, and the certified selective two-shape fixed-M5 checkpoint.
+- [`post-project27/P47_P50_SEARCH_HEAD_CHECKPOINT.md`](post-project27/P47_P50_SEARCH_HEAD_CHECKPOINT.md) records the post-P46 search-head/reducer campaign and its pause point.
 
 ## Actual implementation artifacts
 
@@ -137,6 +141,6 @@ The Project27 snapshot remains intentionally immutable as a historical milestone
 
 P45B2B establishes the current certified **29.32 tok/s-class overall champion** on this tuning line. P46 establishes a separate certified **26.55 tok/s-class D5 checkpoint** whose value is architectural: it narrows the width-5 round-cost gap while preserving a higher commits-per-round regime.
 
-The next high-leverage P46 optimization is draft-side reducer/confidence/jury fusion. D5 performs 512 jury decisions rather than D4's 414, so removing dispatch and intermediate traffic in that decision path attacks a cost that scales directly with D5's extra speculative work.
+Post-P46 search-head/reducer experiments through P50B are documented in `CURRENT_STATUS.md` and `post-project27/P47_P50_SEARCH_HEAD_CHECKPOINT.md`. The exact resume point is **P50C fixed-shape Q4/G64 specialization** preserving native 2-SIMDgroup x 4-row geometry while baking the hot M=1, K=5120, N=248320 shape into the kernel.
 
 A later context-length matrix should compare D4 and D5 directly. D5 saves target forwards, so the optimal runtime may eventually dispatch different speculative widths by context length rather than use one global width.
